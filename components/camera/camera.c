@@ -44,8 +44,6 @@
 #include "rom/lldesc.h"
 #include "esp_intr.h"
 #include <assert.h>
-#include "quirc.h"
-#include "quirc_internal.h"
 #include "camera.h"
 #include "esp_log.h"
 #include "driver/periph_ctrl.h"
@@ -109,7 +107,7 @@ static void enable_out_clock() {
     periph_module_enable(PERIPH_LEDC_MODULE);
 
     ledc_timer_config_t timer_conf;
-    timer_conf.bit_num = 3;
+    timer_conf.bit_num = 2;
     timer_conf.freq_hz = s_config.xclk_freq_hz;
     timer_conf.speed_mode = LEDC_HIGH_SPEED_MODE;
     timer_conf.timer_num = s_config.ledc_timer;
@@ -122,7 +120,7 @@ static void enable_out_clock() {
     ch_conf.channel = s_config.ledc_channel;
     ch_conf.timer_sel = s_config.ledc_timer;
     ch_conf.intr_type = LEDC_INTR_DISABLE;
-    ch_conf.duty = 4;
+    ch_conf.duty = 2;
     ch_conf.speed_mode = LEDC_HIGH_SPEED_MODE;
     ch_conf.gpio_num = s_config.pin_xclk;
     err = ledc_channel_config(&ch_conf);
