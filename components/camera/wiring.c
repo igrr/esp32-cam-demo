@@ -5,7 +5,7 @@
 
 void pinMode(int pin, int mode) {
 
-    gpio_config_t conf;
+    gpio_config_t conf = {0};
     conf.pin_bit_mask = 1LL << pin;
 	if (mode == OUTPUT) {
 		conf.mode = GPIO_MODE_OUTPUT;
