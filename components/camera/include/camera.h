@@ -99,6 +99,12 @@ int camera_get_fb_height();
  */
 esp_err_t camera_run();
 
+/**
+ * @brief Print contents of framebuffer on terminal
+ *
+ */
+void camera_print_fb();
+
 
 #ifdef __cplusplus
 }

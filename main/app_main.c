@@ -16,7 +16,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <assert.h>
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -60,13 +59,16 @@ void app_main()
         return;
     }
 
-    ESP_LOGD(TAG, "Starting camera capture");
-    err = camera_run();
-    if (err != ESP_OK) {
-        ESP_LOGD(TAG, "Camera capture failed with error = %d", err);
-        return;
+    while(true){
+        err = camera_run();
+        if (err != ESP_OK){
+	        ESP_LOGD(TAG, "Camera capture failed with error = %d", err);
+        } else {
+	        ESP_LOGD(TAG, "Done");
+        }
+        camera_print_fb();
+        vTaskDelay(1000 / portTICK_RATE_MS);
     }
-    while(true);
 }
 
 

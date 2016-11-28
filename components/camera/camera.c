@@ -98,8 +98,6 @@ static void i2s_init();
 static void i2s_run(size_t line_width, int height);
 static void IRAM_ATTR i2s_isr(void* arg);
 static esp_err_t dma_desc_init(int line_width);
-static void printfb(int range);
-static void printraw();
 static void line_filter_task(void *pvParameters);
 
 
@@ -107,7 +105,7 @@ static void enable_out_clock() {
     periph_module_enable(PERIPH_LEDC_MODULE);
 
     ledc_timer_config_t timer_conf;
-    timer_conf.bit_num = 2;
+    timer_conf.bit_num = 3;
     timer_conf.freq_hz = s_config.xclk_freq_hz;
     timer_conf.speed_mode = LEDC_HIGH_SPEED_MODE;
     timer_conf.timer_num = s_config.ledc_timer;
@@ -120,7 +118,7 @@ static void enable_out_clock() {
     ch_conf.channel = s_config.ledc_channel;
     ch_conf.timer_sel = s_config.ledc_timer;
     ch_conf.intr_type = LEDC_INTR_DISABLE;
-    ch_conf.duty = 2;
+    ch_conf.duty = 4;
     ch_conf.speed_mode = LEDC_HIGH_SPEED_MODE;
     ch_conf.gpio_num = s_config.pin_xclk;
     err = ledc_channel_config(&ch_conf);
@@ -168,6 +166,9 @@ esp_err_t camera_init(const camera_config_t* config)
     ESP_LOGD(TAG, "Doing SW reset of sensor");
     sensor_reset();
 
+    // enable test pattern
+    // s_sensor.set_colorbar(&s_sensor, 1);
+
     ESP_LOGD(TAG, "Setting frame size");
     framesize_t framesize = FRAMESIZE_QVGA;
     s_sensor.set_framesize(&s_sensor, framesize);
@@ -209,6 +210,22 @@ uint8_t* camera_get_fb()
     return s_fb;
 }
 
+int camera_get_fb_width()
+{
+    if (!s_initialized) {
+        return 0;
+    }
+    return s_fb_w;
+}
+
+int camera_get_fb_height()
+{
+    if (!s_initialized) {
+        return 0;
+    }
+    return s_fb_h;
+}
+
 esp_err_t camera_run()
 {
     if (!s_initialized) {
@@ -219,6 +236,33 @@ esp_err_t camera_run()
     xSemaphoreTake(frame_ready, portMAX_DELAY);
     ESP_LOGD(TAG, "Frame done");
     return ESP_OK;
+}
+
+void camera_print_fb()
+{
+	/* Number of pixels to skip
+	   in order to fit into terminal screen.
+	   Assumed picture to be 80 columns wide
+	   Skip twice as more rows as they look higher.
+	 */
+	int pixels_to_skip = s_fb_w / 80;
+
+    for (int ih = 0; ih < s_fb_h; ih+=pixels_to_skip*2){
+        for (int iw = 0; iw < s_fb_w; iw+=pixels_to_skip){
+    	    uint8_t px = (s_fb[iw + (ih * s_fb_w)]);
+    	    if      (px <  26) printf(" ");
+    	    else if (px <  51) printf(".");
+    	    else if (px <  77) printf(":");
+    	    else if (px < 102) printf("-");
+    	    else if (px < 128) printf("=");
+    	    else if (px < 154) printf("+");
+    	    else if (px < 179) printf("*");
+    	    else if (px < 205) printf("#");
+    	    else if (px < 230) printf("%%");
+    	    else               printf("@");
+        }
+        printf("\n");
+    }
 }
 
 static esp_err_t dma_desc_init(int line_width)
@@ -398,7 +442,6 @@ static void IRAM_ATTR i2s_isr(void* arg) {
 
 static void line_filter_task(void *pvParameters) {
     static int prev_buf = -1;
-    uint32_t total_time = 0;
     while (true) {
         xSemaphoreTake(data_ready, portMAX_DELAY);
         int buf_idx = !cur_buffer;
@@ -443,14 +486,6 @@ int sensor_set_line_filter(line_filter_t line_filter_func, void *line_filter_arg
 
 int sensor_reset()
 {
-    // Reset the sensor state
-    s_sensor.sde = 0xFF;
-    s_sensor.pixformat=0xFF;
-    s_sensor.framesize=0xFF;
-    s_sensor.framerate=0xFF;
-    s_sensor.gainceiling=0xFF;
-
-
     // Reset image filter
     sensor_set_line_filter(NULL, NULL);
 
