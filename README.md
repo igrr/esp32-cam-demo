@@ -10,6 +10,8 @@ Code provided in this repository gets the image from camera and prints it out as
 - [Connect](#connect)
 - [Flash](#flash)
 - [Shoot](#shoot)
+- [Tweak](#tweak)
+- [Troubleshooting](#troubleshooting)
 - [Showcase](#showcase)
 - [Next Steps](#next-steps)
 - [Contribute](#contribute)
@@ -93,12 +95,27 @@ Connecting...
 A fatal error occurred: Failed to connect to ESP32: Timed out waiting for packet header
 make: *** [C:/msys32/esp-idf/components/esptool_py/Makefile.projbuild:48: flash] Error 2
 ```
-This is due to a pullup on the camera reset line. It is stronger than the internal pull-down on GPIO2 of the ESP32, so the chip cannot go into programming mode. To resolve this problem just power down the camera module. If you are using ESP-WROVER V1 with camera plugged in, connect GPIO2 to GND while flashing.
+This is due to a pullup on the camera reset line. It is stronger than the internal pull-down on `GPIO2` of the ESP32, so the chip cannot go into programming mode. 
 
+There are couple of options how to resolve this issue:
+
+* If you are using ESP-WROVER V1 then connect GPIO2 to GND while flashing.
+* Power down the camera module by removing it from the socket (ESP-WROVER V1) or by uplugging 3.3V wire.
+* Map Camera Reset line to another GPIO pin on ESP32, for instance `GPIO15`.
 
 ## Shoot
 
-Once module is loaded with code, open a serial terminal. Camera demo application will first configure [SCCB](http://www.ovt.com/download_document.php?type=document&DID=63) interface:
+Once module is loaded with code, open a serial terminal. 
+
+Camera demo application will first configure XCLK output that is timing operation of the camera chip. 
+
+```
+D (805) camera: Enabling XCLK output
+I (805) LEDC: LEDC_PWM CHANNEL 0|GPIO 21|Duty 0002|Time 0
+```
+This clock is also timing output of pixel data on camera output interface - see I2S and DMA decribed below.
+
+Then [SCCB](http://www.ovt.com/download_document.php?type=document&DID=63) interface is set up:
 
 ```
 D (805) camera: Enabling XCLK output
@@ -130,8 +147,7 @@ If communication with camera module is established, ESP will reset the camera se
 
 ```
 D (1099) camera: Doing SW reset of sensor
-D (1159) camera: Setting frame size
-set_framesize: h=320 v=240
+D (1159) camera: Setting frame size at 320x240
 D (1189) camera: Allocating frame buffer (320x240, 76800 bytes)
 ```
 
@@ -171,6 +187,59 @@ D (5079) camera_demo: Done
 @@@@@@@@@=       .@@@@@@@@@@         :@@@@@@@@@@=        .@@@@@@@@@=       @@@@@
 @@@@@@@@@:       .@@@@@@@@@@         :@@@@@@@@@@+        .@@@@@@@@@*       *@@@@
 @@@@@@@@@        :@@@@@@@@@@.        :@@@@@@@@@@*.     . .@@@@@@@@@@       -@@@@
+```
+
+## Tweak
+
+Application is configured to run the camera chip with the system clock signal `XCLK` at 10MHz. According to OV7725 specification ver. 1.31 on August 7, 2007, the frequency range of `XCLK` is from 10 to 48MHz. Go ahead and modify this frequency. See [Issue #2](https://github.com/igrr/esp32-cam-demo/issues/2#issuecomment-263345597) for extra guidance.
+
+By changing XCLK you can get your images from camera couple of times faster. For reference see comparison below checked with a scope:
+
+| XCLK frequency | 10MHz | 20MHz | 40MHz |
+| --- | --- | --- | --- |
+| Time to output one pixel / two bytes | 0.2us | 0.1us | 0.05us |
+| Time to output one QVGA line 320 pixels / 640 bytes | 64us | 32us | 16us |
+| Time to output whole QVGA frame of 153,600 bytes | 27.6ms | 13.8ms | 6.9ms |
+
+Note that OV7725 is transmitting two bytes per pixel, so the whole QVGA (320x240 pixels) image takes 153,600 bytes. The [esp32-cam-demo](https://github.com/igrr/esp32-cam-demo) application is currently set up to retrieve images in YUV format. First byte contains Y (luminance) component, the second byte contains UV (chrominance). Application is discarding chrominance byte and saving only the luminance to get gray scale image. As result the image that finally makes to the frame buffer on ESP32 takes 76,800 bytes (half of 153,600 bytes).
+
+The best way to verify timing of signals is with a scope. If you do not have one, then you can still check the millisecond clock printed out on the log.
+
+```
+D (122913) camera: Waiting for VSYNC
+D (122913) camera: Got VSYNC
+D (122913) camera: Waiting for frame
+D (122923) camera: Frame done
+D (122923) camera_demo: Done
+```
+Above example shows [esp32-cam-demo](https://github.com/igrr/esp32-cam-demo) application with `XCLK` running at 40MHz. Every frame is transmitted within 10ms. 
+
+## Troubleshooting
+
+If you have issues to get the live image right, enable test pattern. To do so, change the following define in file `camera.c` from `0` to `1`:
+
+```
+# define ENABLE_TEST_PATTERN 0
+``` 
+
+Camera sensor will then output test pattern instead of live image.
+
+```
+D (51338) camera: Waiting for VSYNC
+D (51358) camera: Got VSYNC
+D (51358) camera: Waiting for frame
+D (51388) camera: Frame done
+D (51388) camera_demo: Done
+ @@@@@@@@@@@@@@@@@@@@@%%%%%%%%%########## +++++++++==========-:::::::::
+  @@@@@@@@@@@@@@@@@@@@@%%%%%%%%%########## +++++++++==========-:::::::::
+   @@@@@@@@@@@@@@@@@@@@%%%%%%%%%##########*+++++++++===========:::::::::.
+   @@@@@@@@@@@@@@@@@@@@%%%%%%%%%##########*+++++++++===========:::::::::.
+   @@@@@@@@@@@@@@@@@@@@%%%%%%%%%##########++++++++++===========:::::::::.
+   @@@@@@@@@@@@@@@@@@@@%%%%%%%%%##########++++++++++===========:::::::::.
+   @@@@@@@@@@@@@@@@@@@@%%%%%%%%%##########++++++++++===========:::::::::.
+   @@@@@@@@@@@@@@@@@@@@%%%%%%%%%##########++++++++++===========:::::::::.
+   @@@@@@@@@@@@@@@@@@@@%%%%%%%%%##########++++++++++===========:::::::::.
+   @@@@@@@@@@@@@@@@@@@@%%%%%%%%%##########++++++++++===========:::::::::.
 ```
 
 ## Showcase
