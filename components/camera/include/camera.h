@@ -45,15 +45,16 @@ typedef struct {
 } camera_config_t;
 
 #define ESP_ERR_CAMERA_BASE 0x20000
-#define ESP_ERR_CAMERA_NOT_DETECTED (ESP_ERR_CAMERA_BASE + 1)
+#define ESP_ERR_CAMERA_NOT_DETECTED             (ESP_ERR_CAMERA_BASE + 1)
+#define ESP_ERR_CAMERA_FAILED_TO_SET_FRAME_SIZE (ESP_ERR_CAMERA_BASE + 2)
 
 /**
- * @brief Initalize the camera
+ * @brief Initialize the camera
  *
  * This function enables LEDC peripheral to generate XCLK signal,
  * detects and configures camera over I2C interface,
  * allocates framebuffer and DMA buffers,
- * initializes paralles I2S input, and sets up DMA descriptors.
+ * initializes parallel I2S input, and sets up DMA descriptors.
  *
  * Currently camera is initialized in QVGA mode, and data is
  * converted into grayscale.
