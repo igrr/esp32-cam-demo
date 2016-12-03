@@ -82,7 +82,6 @@ typedef struct _sensor {
 
     // Sensor function pointers
     int  (*reset)               (sensor_t *sensor);
-    int  (*get_id)              (sensor_t *sensor);
     int  (*set_pixformat)       (sensor_t *sensor, pixformat_t pixformat);
     int  (*set_framesize)       (sensor_t *sensor, framesize_t framesize);
     int  (*set_quality)         (sensor_t *sensor, int quality);

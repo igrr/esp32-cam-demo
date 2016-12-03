@@ -191,7 +191,7 @@ static int set_framesize(sensor_t *sensor, framesize_t framesize)
     // Delay
     systick_sleep(30);
 
-    if (ret != 0) {
+    if (ret == 0) {
         sensor->framesize = framesize;
     }
 

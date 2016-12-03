@@ -243,8 +243,8 @@ void camera_print_fb()
 	 */
 	int pixels_to_skip = s_fb_w / 80;
 
-    for (int ih = 0; ih < s_fb_h; ih+=pixels_to_skip*2){
-        for (int iw = 0; iw < s_fb_w; iw+=pixels_to_skip){
+    for (int ih = 0; ih < s_fb_h; ih += pixels_to_skip * 2){
+        for (int iw = 0; iw < s_fb_w; iw += pixels_to_skip){
     	    uint8_t px = (s_fb[iw + (ih * s_fb_w)]);
     	    if      (px <  26) printf(" ");
     	    else if (px <  51) printf(".");
