@@ -65,10 +65,9 @@ void app_main()
 	        ESP_LOGD(TAG, "Camera capture failed with error = %d", err);
         } else {
 	        ESP_LOGD(TAG, "Done");
+	        camera_print_fb();
         }
-        camera_print_fb();
         vTaskDelay(1000 / portTICK_RATE_MS);
     }
 }
-
 
