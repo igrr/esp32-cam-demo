@@ -113,7 +113,7 @@ Camera demo application will first configure XCLK output that is timing operatio
 D (805) camera: Enabling XCLK output
 I (805) LEDC: LEDC_PWM CHANNEL 0|GPIO 21|Duty 0002|Time 0
 ```
-This clock is also timing output of pixel data on camera output interface - see I2S and DMA decribed below.
+This clock is also timing output of pixel data on camera output interface - see I2S and DMA described below.
 
 Then [SCCB](http://www.ovt.com/download_document.php?type=document&DID=63) interface is set up:
 
@@ -201,9 +201,9 @@ By changing XCLK you can get your images from camera couple of times faster. For
 | Time to output one QVGA line 320 pixels / 640 bytes | 64us | 32us | 16us |
 | Time to output whole QVGA frame of 153,600 bytes | 27.6ms | 13.8ms | 6.9ms |
 
-Note that OV7725 is transmitting two bytes per pixel, so the whole QVGA (320x240 pixels) image takes 153,600 bytes. The [esp32-cam-demo](https://github.com/igrr/esp32-cam-demo) application is currently set up to retrieve images in YUV format. First byte contains Y (luminance) component, the second byte contains UV (chrominance). Application is discarding chrominance byte and saving only the luminance to get gray scale image. As result the image that finally makes to the frame buffer on ESP32 takes 76,800 bytes (half of 153,600 bytes).
+Note that OV7725 is transmitting two bytes per pixel, so the whole QVGA (320x240 pixels) image takes 153,600 bytes. This application is currently set up to retrieve images in YUV format. First byte contains Y (luminance) component, the second byte contains UV (chrominance). Application is discarding chrominance byte and saving only the luminance to get gray scale image. As result the image that finally makes to the frame buffer on ESP32 takes 76,800 bytes (half of 153,600 bytes).
 
-The best way to verify timing of signals is with a scope. If you do not have one, then you can still check the millisecond clock printed out on the log.
+Use scope of logic analyzer to verify timing of signals. If you do not any, then you can still check the millisecond clock printed out on the log.
 
 ```
 D (122913) camera: Waiting for VSYNC
@@ -212,14 +212,18 @@ D (122913) camera: Waiting for frame
 D (122923) camera: Frame done
 D (122923) camera_demo: Done
 ```
-Above example shows [esp32-cam-demo](https://github.com/igrr/esp32-cam-demo) application with `XCLK` running at 40MHz. Every frame is transmitted within 10ms. 
+Above example shows application with `XCLK` running at 40MHz. Every frame is transmitted within 10ms. 
 
 ## Troubleshooting
 
-If you have issues to get the live image right, enable test pattern. To do so, change the following define in file `camera.c` from `0` to `1`:
+If you have issues to get the live image right, enable test pattern and see what is retrieved. 
+
+To do so, run `make menuconfig`, open `Example Configuration` menu option and check `[ ] Enable test pattern on camera output`.
+
+Optionally change the following define in file `camera.c`:
 
 ```
-# define ENABLE_TEST_PATTERN 0
+# define ENABLE_TEST_PATTERN CONFIG_ENABLE_TEST_PATTERN
 ``` 
 
 Camera sensor will then output test pattern instead of live image.

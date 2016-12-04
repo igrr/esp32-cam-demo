@@ -46,7 +46,7 @@
 #include "esp_log.h"
 #include "driver/periph_ctrl.h"
 
-# define ENABLE_TEST_PATTERN 0
+# define ENABLE_TEST_PATTERN CONFIG_ENABLE_TEST_PATTERN
 
 static const char* TAG = "camera";
 
