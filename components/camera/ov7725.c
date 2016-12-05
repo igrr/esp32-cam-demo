@@ -16,18 +16,10 @@
 
 static const uint8_t default_regs[][2] = {
     {COM3,          COM3_SWAP_YUV},
-    // {COM7,          COM7_RES_QVGA | COM7_FMT_RGB565 | COM7_FMT_RGB},
     {COM7,          COM7_RES_QVGA | COM7_FMT_YUV},
 
     {COM4,          0x01}, /* bypass PLL */
     {CLKRC,         0xC0}, /* Res/Bypass pre-scalar */
-
-    // // VGA Window Size
-    // {HSTART,        0x23},
-    // {HSIZE,         0xA0},
-    // {VSTART,        0x07},
-    // {VSIZE,         0xF0},
-    // {HREF,          0x00},
 
     // QVGA Window Size
     {HSTART,        0x3F},
@@ -36,8 +28,7 @@ static const uint8_t default_regs[][2] = {
     {VSIZE,         0x78},
     {HREF,          0x00},
 
-
-    // Scale down to QVGA Resoultion
+    // Scale down to QVGA Resolution
     {HOUTSIZE,      0x50},
     {VOUTSIZE,      0x78},
 
@@ -120,44 +111,6 @@ static const uint8_t default_regs[][2] = {
     {0x00,          0x00},
 };
 
-#define NUM_BRIGHTNESS_LEVELS (9)
-static const uint8_t brightness_regs[NUM_BRIGHTNESS_LEVELS][2] = {
-    {0x38, 0x0e}, /* -4 */
-    {0x28, 0x0e}, /* -3 */
-    {0x18, 0x0e}, /* -2 */
-    {0x08, 0x0e}, /* -1 */
-    {0x08, 0x06}, /*  0 */
-    {0x18, 0x06}, /* +1 */
-    {0x28, 0x06}, /* +2 */
-    {0x38, 0x06}, /* +3 */
-    {0x48, 0x06}, /* +4 */
-};
-
-#define NUM_CONTRAST_LEVELS (9)
-static const uint8_t contrast_regs[NUM_CONTRAST_LEVELS][1] = {
-    {0x10}, /* -4 */
-    {0x14}, /* -3 */
-    {0x18}, /* -2 */
-    {0x1C}, /* -1 */
-    {0x20}, /*  0 */
-    {0x24}, /* +1 */
-    {0x28}, /* +2 */
-    {0x2C}, /* +3 */
-    {0x30}, /* +4 */
-};
-
-#define NUM_SATURATION_LEVELS (9)
-static const uint8_t saturation_regs[NUM_SATURATION_LEVELS][2] = {
-    {0x00, 0x00}, /* -4 */
-    {0x10, 0x10}, /* -3 */
-    {0x20, 0x20}, /* -2 */
-    {0x30, 0x30}, /* -1 */
-    {0x40, 0x40}, /*  0 */
-    {0x50, 0x50}, /* +1 */
-    {0x60, 0x60}, /* +2 */
-    {0x70, 0x70}, /* +3 */
-    {0x80, 0x80}, /* +4 */
-};
 
 static int reset(sensor_t *sensor)
 {
@@ -180,6 +133,7 @@ static int reset(sensor_t *sensor)
 
     return 0;
 }
+
 
 static int set_pixformat(sensor_t *sensor, pixformat_t pixformat)
 {
@@ -218,10 +172,6 @@ static int set_framesize(sensor_t *sensor, framesize_t framesize)
     ret |= SCCB_Write(sensor->slv_addr, HOUTSIZE, w>>2);
     ret |= SCCB_Write(sensor->slv_addr, VOUTSIZE, h>>1);
 
-    int hout = SCCB_Read(sensor->slv_addr, HOUTSIZE);
-    int vout = SCCB_Read(sensor->slv_addr, VOUTSIZE);
-    printf("%s: h=%d v=%d\n", __func__, hout << 2, vout << 1);
-
     // Write LSBs
     ret |= SCCB_Write(sensor->slv_addr, EXHCH, ((w&0x3) | ((h&0x1) << 2)));
 
@@ -241,65 +191,11 @@ static int set_framesize(sensor_t *sensor, framesize_t framesize)
     // Delay
     systick_sleep(30);
 
-    return ret;
-}
-
-static int set_framerate(sensor_t *sensor, framerate_t framerate)
-{
-    return 0;
-}
-
-static int set_contrast(sensor_t *sensor, int level)
-{
-    int ret=0;
-
-    level += (NUM_CONTRAST_LEVELS / 2);
-    if (level < 0 || level >= NUM_CONTRAST_LEVELS) {
-        return -1;
+    if (ret == 0) {
+        sensor->framesize = framesize;
     }
 
-    ret |= SCCB_Write(sensor->slv_addr, CONTRAST, contrast_regs[level][0]);
     return ret;
-}
-
-static int set_brightness(sensor_t *sensor, int level)
-{
-    int ret=0;
-
-    level += (NUM_BRIGHTNESS_LEVELS / 2);
-    if (level < 0 || level >= NUM_BRIGHTNESS_LEVELS) {
-        return -1;
-    }
-
-    ret |= SCCB_Write(sensor->slv_addr, BRIGHTNESS, brightness_regs[level][0]);
-    ret |= SCCB_Write(sensor->slv_addr, SIGN_BIT,   brightness_regs[level][1]);
-    return ret;
-}
-
-static int set_saturation(sensor_t *sensor, int level)
-{
-    int ret=0;
-
-    level += (NUM_SATURATION_LEVELS / 2 );
-    if (level < 0 || level >= NUM_SATURATION_LEVELS) {
-        return -1;
-    }
-
-    ret |= SCCB_Write(sensor->slv_addr, USAT, saturation_regs[level][0]);
-    ret |= SCCB_Write(sensor->slv_addr, VSAT, saturation_regs[level][1]);
-    return ret;
-}
-
-static int set_gainceiling(sensor_t *sensor, gainceiling_t gainceiling)
-{
-    // Read register COM9
-    uint8_t reg = SCCB_Read(sensor->slv_addr, COM9);
-
-    // Set gain ceiling
-    reg = COM9_SET_AGC(reg, gainceiling);
-
-    // Write back register COM9
-    return SCCB_Write(sensor->slv_addr, COM9, reg);
 }
 
 static int set_colorbar(sensor_t *sensor, int enable)
@@ -384,44 +280,24 @@ static int set_vflip(sensor_t *sensor, int enable)
     return SCCB_Write(sensor->slv_addr, COM3, reg);
 }
 
-static int set_special_effect(sensor_t *sensor, sde_t sde)
-{
-    int ret=0;
-
-    switch (sde) {
-        case SDE_NEGATIVE:
-            ret |= SCCB_Write(sensor->slv_addr, SDE, 0x46);
-            break;
-        case SDE_NORMAL:
-            ret |= SCCB_Write(sensor->slv_addr, SDE, 0x06);
-            ret |= SCCB_Write(sensor->slv_addr, UFIX, 0x80);
-            ret |= SCCB_Write(sensor->slv_addr, UFIX, 0x80);
-            break;
-        default:
-            return -1;
-    }
-
-    return 0;
-}
-
 int ov7725_init(sensor_t *sensor)
 {
     // Set function pointers
     sensor->reset = reset;
     sensor->set_pixformat = set_pixformat;
     sensor->set_framesize = set_framesize;
-    sensor->set_framerate = set_framerate;
-    sensor->set_contrast  = set_contrast;
-    sensor->set_brightness= set_brightness;
-    sensor->set_saturation= set_saturation;
-    sensor->set_gainceiling = set_gainceiling;
     sensor->set_colorbar = set_colorbar;
     sensor->set_whitebal = set_whitebal;
     sensor->set_gain_ctrl = set_gain_ctrl;
     sensor->set_exposure_ctrl = set_exposure_ctrl;
     sensor->set_hmirror = set_hmirror;
     sensor->set_vflip = set_vflip;
-    sensor->set_special_effect = set_special_effect;
+
+    // Retrieve sensor's signature
+    sensor->id.midh = SCCB_Read(sensor->slv_addr, MIDH);
+    sensor->id.midl = SCCB_Read(sensor->slv_addr, MIDL);
+    sensor->id.pid = SCCB_Read(sensor->slv_addr, PID);
+    sensor->id.ver = SCCB_Read(sensor->slv_addr, VER);
 
     // Set sensor flags
     SENSOR_HW_FLAGS_SET(sensor, SENSOR_HW_FLAGS_VSYNC, 1);

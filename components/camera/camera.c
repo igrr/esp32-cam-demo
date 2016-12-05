@@ -36,22 +36,17 @@
 #include "soc/gpio_sig_map.h"
 #include "soc/i2s_reg.h"
 #include "soc/io_mux_reg.h"
-#include "driver/gpio.h"
 #include "sensor.h"
 #include "ov7725.h"
 #include <stdlib.h>
 #include <string.h>
 #include "rom/lldesc.h"
 #include "esp_intr.h"
-#include <assert.h>
 #include "camera.h"
 #include "esp_log.h"
 #include "driver/periph_ctrl.h"
 
-#define REG_PID        0x0A
-#define REG_VER        0x0B
-#define REG_MIDH       0x1C
-#define REG_MIDL       0x1D
+# define ENABLE_TEST_PATTERN CONFIG_ENABLE_TEST_PATTERN
 
 static const char* TAG = "camera";
 
@@ -93,7 +88,6 @@ const int resolution[][2] = {
 };
 
 
-
 static void i2s_init();
 static void i2s_run(size_t line_width, int height);
 static void IRAM_ATTR i2s_isr(void* arg);
@@ -125,9 +119,7 @@ static void enable_out_clock() {
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "ledc_channel_config failed, rc=%x", err);
     }
-
 }
-
 
 esp_err_t camera_init(const camera_config_t* config)
 {
@@ -152,30 +144,34 @@ esp_err_t camera_init(const camera_config_t* config)
         return ESP_ERR_CAMERA_NOT_DETECTED;
     }
     ESP_LOGD(TAG, "Detected camera at address=0x%02x", addr);
-
     s_sensor.slv_addr = addr;
-    s_sensor.id.PID  = SCCB_Read(s_sensor.slv_addr, REG_PID);
-    s_sensor.id.VER  = SCCB_Read(s_sensor.slv_addr, REG_VER);
-    s_sensor.id.MIDL = SCCB_Read(s_sensor.slv_addr, REG_MIDL);
-    s_sensor.id.MIDH = SCCB_Read(s_sensor.slv_addr, REG_MIDH);
-    ESP_LOGD(TAG, "Camera PID=0x%02x VER=0x%02x MIDL=0x%02x MIDH=0x%02x\n",
-        s_sensor.id.PID, s_sensor.id.VER, s_sensor.id.MIDH, s_sensor.id.MIDL);
 
     ov7725_init(&s_sensor);
+    ESP_LOGD(TAG, "Camera PID=0x%02x VER=0x%02x MIDL=0x%02x MIDH=0x%02x",
+           s_sensor.id.pid, s_sensor.id.ver, s_sensor.id.midh, s_sensor.id.midl);
 
     ESP_LOGD(TAG, "Doing SW reset of sensor");
-    sensor_reset();
+    s_sensor.reset(&s_sensor);
 
-    // enable test pattern
-    // s_sensor.set_colorbar(&s_sensor, 1);
+#if ENABLE_TEST_PATTERN
+    /* Test pattern may get handy
+       if you are unable to get the live image right.
+       Once test pattern is enable, sensor will output
+       vertical shaded bars instead of live image.
+    */
+    s_sensor.set_colorbar(&s_sensor, 1);
+    ESP_LOGD(TAG, "Test pattern enabled");
+#endif
 
-    ESP_LOGD(TAG, "Setting frame size");
     framesize_t framesize = FRAMESIZE_QVGA;
-    s_sensor.set_framesize(&s_sensor, framesize);
-    s_sensor.framesize = framesize;
-
     s_fb_w = resolution[framesize][0];
     s_fb_h = resolution[framesize][1];
+    ESP_LOGD(TAG, "Setting frame size at %dx%d", s_fb_w, s_fb_h);
+    if (s_sensor.set_framesize(&s_sensor, framesize) != 0) {
+        ESP_LOGE(TAG, "Failed to set frame size");
+        return ESP_ERR_CAMERA_FAILED_TO_SET_FRAME_SIZE;
+    }
+
     s_fb_size = s_fb_w * s_fb_h;
     ESP_LOGD(TAG, "Allocating frame buffer (%dx%d, %d bytes)", s_fb_w, s_fb_h, s_fb_size);
     s_fb = (uint8_t*) malloc(s_fb_size);
@@ -242,13 +238,13 @@ void camera_print_fb()
 {
 	/* Number of pixels to skip
 	   in order to fit into terminal screen.
-	   Assumed picture to be 80 columns wide
+	   Assumed picture to be 80 columns wide.
 	   Skip twice as more rows as they look higher.
 	 */
 	int pixels_to_skip = s_fb_w / 80;
 
-    for (int ih = 0; ih < s_fb_h; ih+=pixels_to_skip*2){
-        for (int iw = 0; iw < s_fb_w; iw+=pixels_to_skip){
+    for (int ih = 0; ih < s_fb_h; ih += pixels_to_skip * 2){
+        for (int iw = 0; iw < s_fb_w; iw += pixels_to_skip){
     	    uint8_t px = (s_fb[iw + (ih * s_fb_w)]);
     	    if      (px <  26) printf(" ");
     	    else if (px <  51) printf(".");
@@ -267,6 +263,10 @@ void camera_print_fb()
 
 static esp_err_t dma_desc_init(int line_width)
 {
+	/* I2S peripheral captures 16 bit of data every clock cycle,
+	   even though we are only using 8 bits.
+	   On top of that we need two bytes per pixel.
+	 */
     size_t buf_size = line_width * 4;
     for (int i = 0; i < 2; ++i) {
         ESP_LOGD(TAG, "Allocating DMA buffer #%d, size=%d", i, buf_size);
@@ -470,26 +470,4 @@ static void line_filter_task(void *pvParameters) {
             xSemaphoreGive(frame_ready);
         }
     }
-}
-
-
-/* sensor_* functions from OpenMV */
-
-int sensor_set_line_filter(line_filter_t line_filter_func, void *line_filter_args)
-{
-    // Set line pre-processing function and args
-    s_sensor.line_filter_func = line_filter_func;
-    s_sensor.line_filter_args = line_filter_args;
-    return 0;
-}
-
-
-int sensor_reset()
-{
-    // Reset image filter
-    sensor_set_line_filter(NULL, NULL);
-
-    // Call sensor-specific reset function
-    s_sensor.reset(&s_sensor);
-    return 0;
 }
