@@ -372,7 +372,7 @@ static void i2s_fill_buf(int index) {
     ESP_INTR_DISABLE(ETS_I2S0_INUM);
 
     SET_PERI_REG_BITS(I2S_RXEOF_NUM_REG(0), I2S_RX_EOF_NUM, (buf_line_width - 2) * 2, I2S_RX_EOF_NUM_S);
-    SET_PERI_REG_BITS(I2S_IN_LINK_REG(0), I2S_INLINK_ADDR, ((uint32_t) &s_dma_desc), I2S_INLINK_ADDR_S);
+    SET_PERI_REG_BITS(I2S_IN_LINK_REG(0), I2S_INLINK_ADDR, ((uint32_t) &s_dma_desc[index]), I2S_INLINK_ADDR_S);
     SET_PERI_REG_BITS(I2S_IN_LINK_REG(0), 0x1, 1, I2S_INLINK_START_S);
 
     REG_WRITE(I2S_INT_CLR_REG(0), (REG_READ(I2S_INT_RAW_REG(0)) & 0xffffffc0) | 0x3f);
