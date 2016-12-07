@@ -372,7 +372,7 @@ static void i2s_fill_buf(int index) {
     ESP_INTR_DISABLE(ETS_I2S0_INUM);
 
     SET_PERI_REG_BITS(I2S_RXEOF_NUM_REG(0), I2S_RX_EOF_NUM, (buf_line_width - 2) * 2, I2S_RX_EOF_NUM_S);
-    SET_PERI_REG_BITS(I2S_IN_LINK_REG(0), I2S_INLINK_ADDR, ((uint32_t) &s_dma_desc), I2S_INLINK_ADDR_S);
+    SET_PERI_REG_BITS(I2S_IN_LINK_REG(0), I2S_INLINK_ADDR, ((uint32_t) &s_dma_desc[index]), I2S_INLINK_ADDR_S);
     SET_PERI_REG_BITS(I2S_IN_LINK_REG(0), 0x1, 1, I2S_INLINK_START_S);
 
     REG_WRITE(I2S_INT_CLR_REG(0), (REG_READ(I2S_INT_RAW_REG(0)) & 0xffffffc0) | 0x3f);
@@ -449,20 +449,16 @@ static void line_filter_task(void *pvParameters) {
             ets_printf("! %d\n", line_count);
         }
         uint8_t* pfb = s_fb + line_count * buf_line_width;
-        if (line_count & 1) {
-            uint8_t* psrc = s_fb + (line_count - 1) * buf_line_width;
-            memcpy(pfb, psrc, buf_line_width);
+
+        const uint32_t* buf = s_dma_buf[buf_idx];   //Get pointer to current DMA buffer
+        for (int i = 0; i < buf_line_width; ++i) {  
+            uint32_t v = *buf;                      //Get 32bit from DMA buffer 1 Pixel = (2Byte i2s overhead + 2Byte pixeldata)
+            uint8_t comp = (v & 0xff0000) >> 16;    //Extract third Byte. (Only the luminance information from the pixel)
+            *pfb = comp;                            //Write Byte to target buffer
+            ++buf;                                  //Set source pointer 32bit forward
+            ++pfb;                                  //Set target pointer 8bit forward
         }
-        else {
-            const uint32_t* buf = s_dma_buf[buf_idx];
-            for (int i = 0; i < buf_line_width; ++i) {
-                uint32_t v = *buf;
-                uint8_t comp = (v & 0xff0000) >> 16;
-                *pfb = comp;
-                ++buf;
-                ++pfb;
-            }
-        }
+        
         ++line_count;
         prev_buf = buf_idx;
         if (!i2s_running) {
