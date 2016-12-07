@@ -449,20 +449,16 @@ static void line_filter_task(void *pvParameters) {
             ets_printf("! %d\n", line_count);
         }
         uint8_t* pfb = s_fb + line_count * buf_line_width;
-        if (line_count & 1) {
-            uint8_t* psrc = s_fb + (line_count - 1) * buf_line_width;
-            memcpy(pfb, psrc, buf_line_width);
+
+        const uint32_t* buf = s_dma_buf[buf_idx];   //Get pointer to current DMA buffer
+        for (int i = 0; i < buf_line_width; ++i) {  
+            uint32_t v = *buf;                      //Get 32bit from DMA buffer 1 Pixel = (2Byte i2s overhead + 2Byte pixeldata)
+            uint8_t comp = (v & 0xff0000) >> 16;    //Extract third Byte. (Only the luminance information from the pixel)
+            *pfb = comp;                            //Write Byte to target buffer
+            ++buf;                                  //Set source pointer 32bit forward
+            ++pfb;                                  //Set target pointer 8bit forward
         }
-        else {
-            const uint32_t* buf = s_dma_buf[buf_idx];
-            for (int i = 0; i < buf_line_width; ++i) {
-                uint32_t v = *buf;
-                uint8_t comp = (v & 0xff0000) >> 16;
-                *pfb = comp;
-                ++buf;
-                ++pfb;
-            }
-        }
+        
         ++line_count;
         prev_buf = buf_idx;
         if (!i2s_running) {
