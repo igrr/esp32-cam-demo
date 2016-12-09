@@ -23,7 +23,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-
 #include <stdio.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -35,13 +34,14 @@
 #include "driver/ledc.h"
 #include "soc/gpio_sig_map.h"
 #include "soc/i2s_reg.h"
+#include "soc/i2s_struct.h"
 #include "soc/io_mux_reg.h"
 #include "sensor.h"
 #include "ov7725.h"
 #include <stdlib.h>
 #include <string.h>
 #include "rom/lldesc.h"
-#include "esp_intr.h"
+#include "esp_intr_alloc.h"
 #include "camera.h"
 #include "esp_log.h"
 #include "driver/periph_ctrl.h"
@@ -59,16 +59,15 @@ static bool s_initialized = false;
 static int s_fb_w;
 static int s_fb_h;
 static size_t s_fb_size;
-
-static volatile int isr_count = 0;
-static volatile int line_count = 0;
-static volatile int cur_buffer = 0;
-static int buf_line_width;
-static int buf_height;
-static volatile bool i2s_running = 0;
-static SemaphoreHandle_t data_ready;
-static SemaphoreHandle_t frame_ready;
-
+static volatile int s_isr_count = 0;
+static volatile int s_line_count = 0;
+static volatile int s_cur_buffer = 0;
+static int s_buf_line_width;
+static int s_buf_height;
+static volatile bool s_i2s_running = 0;
+static SemaphoreHandle_t s_data_ready;
+static SemaphoreHandle_t s_frame_ready;
+static intr_handle_t s_i2s_intr_handle = NULL;
 
 const int resolution[][2] = {
     {40,    30 },    /* 40x30 */
@@ -87,15 +86,14 @@ const int resolution[][2] = {
     {1600,  1200},   /* UXGA  */
 };
 
-
 static void i2s_init();
 static void i2s_run(size_t line_width, int height);
 static void IRAM_ATTR i2s_isr(void* arg);
 static esp_err_t dma_desc_init(int line_width);
 static void line_filter_task(void *pvParameters);
 
-
-static void enable_out_clock() {
+static void enable_out_clock()
+{
     periph_module_enable(PERIPH_LEDC_MODULE);
 
     ledc_timer_config_t timer_conf;
@@ -148,7 +146,8 @@ esp_err_t camera_init(const camera_config_t* config)
 
     ov7725_init(&s_sensor);
     ESP_LOGD(TAG, "Camera PID=0x%02x VER=0x%02x MIDL=0x%02x MIDH=0x%02x",
-           s_sensor.id.pid, s_sensor.id.ver, s_sensor.id.midh, s_sensor.id.midl);
+            s_sensor.id.pid, s_sensor.id.ver, s_sensor.id.midh,
+            s_sensor.id.midl);
 
     ESP_LOGD(TAG, "Doing SW reset of sensor");
     s_sensor.reset(&s_sensor);
@@ -173,7 +172,8 @@ esp_err_t camera_init(const camera_config_t* config)
     }
 
     s_fb_size = s_fb_w * s_fb_h;
-    ESP_LOGD(TAG, "Allocating frame buffer (%dx%d, %d bytes)", s_fb_w, s_fb_h, s_fb_size);
+    ESP_LOGD(TAG, "Allocating frame buffer (%dx%d, %d bytes)", s_fb_w, s_fb_h,
+            s_fb_size);
     s_fb = (uint8_t*) malloc(s_fb_size);
     if (s_fb == NULL) {
         ESP_LOGE(TAG, "Failed to allocate frame buffer");
@@ -188,12 +188,23 @@ esp_err_t camera_init(const camera_config_t* config)
         return err;
     }
 
-    data_ready = xSemaphoreCreateBinary();
-    frame_ready = xSemaphoreCreateBinary();
+    s_data_ready = xSemaphoreCreateBinary();
+    s_frame_ready = xSemaphoreCreateBinary();
+    xTaskCreatePinnedToCore(&line_filter_task, "line_filter", 2048, NULL, 10,
+            NULL, 0);
 
-    xTaskCreatePinnedToCore(&line_filter_task, "line_filter", 2048, NULL, 10, NULL, 0);
+    // skip at least one frame after changing camera settings
+    while (gpio_get_level(s_config.pin_vsync) == 0) {
+        ;
+    }
+    while (gpio_get_level(s_config.pin_vsync) != 0) {
+        ;
+    }
+    while (gpio_get_level(s_config.pin_vsync) == 0) {
+        ;
+    }
+
     ESP_LOGD(TAG, "Init done");
-
     s_initialized = true;
     return ESP_OK;
 }
@@ -229,7 +240,7 @@ esp_err_t camera_run()
     }
     i2s_run(s_fb_w, s_fb_h);
     ESP_LOGD(TAG, "Waiting for frame");
-    xSemaphoreTake(frame_ready, portMAX_DELAY);
+    xSemaphoreTake(s_frame_ready, portMAX_DELAY);
     ESP_LOGD(TAG, "Frame done");
     return ESP_OK;
 }
@@ -274,7 +285,7 @@ static esp_err_t dma_desc_init(int line_width)
         if (s_dma_buf[i] == NULL) {
             return ESP_ERR_NO_MEM;
         }
-        ESP_LOGV(TAG, "dma_buf[%d]=%p\n", i, s_dma_buf[i]);
+        ESP_LOGV(TAG, "dma_buf[%d]=%p", i, s_dma_buf[i]);
 
         s_dma_desc[i].length = buf_size;     // size of a single DMA buf
         s_dma_desc[i].size = buf_size;       // total size of the chain
@@ -289,181 +300,177 @@ static esp_err_t dma_desc_init(int line_width)
     return ESP_OK;
 }
 
-#define ETS_I2S0_INUM 13
+static inline void i2s_conf_reset()
+{
+    const uint32_t conf_reset_flags = I2S_RX_RESET_M | I2S_RX_FIFO_RESET_M
+            | I2S_TX_RESET_M | I2S_TX_FIFO_RESET_M;
+    I2S0.conf.val |= conf_reset_flags;
+    I2S0.conf.val &= ~conf_reset_flags;
+    while (I2S0.state.rx_fifo_reset_back) {
+        ;
+    }
+}
 
 static void i2s_init()
 {
-    xt_set_interrupt_handler(ETS_I2S0_INUM, &i2s_isr, NULL);
-    intr_matrix_set(0, ETS_I2S0_INTR_SOURCE, ETS_I2S0_INUM);
-
-    gpio_num_t pins[] = {
-            s_config.pin_d7,
-            s_config.pin_d6,
-            s_config.pin_d5,
-            s_config.pin_d4,
-            s_config.pin_d3,
-            s_config.pin_d2,
-            s_config.pin_d1,
-            s_config.pin_d0,
-            s_config.pin_vsync,
-            s_config.pin_href,
-            s_config.pin_pclk
-    };
-
-    gpio_config_t conf = {
-            .mode = GPIO_MODE_INPUT,
-            .pull_up_en = GPIO_PULLUP_DISABLE,
-            .pull_down_en = GPIO_PULLDOWN_DISABLE,
-            .intr_type = GPIO_INTR_DISABLE
-    };
-    for (int i = 0; i < sizeof(pins)/sizeof(gpio_num_t); ++i) {
+    // Configure input GPIOs
+    gpio_num_t pins[] = { s_config.pin_d7, s_config.pin_d6, s_config.pin_d5,
+            s_config.pin_d4, s_config.pin_d3, s_config.pin_d2, s_config.pin_d1,
+            s_config.pin_d0, s_config.pin_vsync, s_config.pin_href,
+            s_config.pin_pclk };
+    gpio_config_t conf = { .mode = GPIO_MODE_INPUT, .pull_up_en =
+            GPIO_PULLUP_DISABLE, .pull_down_en = GPIO_PULLDOWN_DISABLE,
+            .intr_type = GPIO_INTR_DISABLE };
+    for (int i = 0; i < sizeof(pins) / sizeof(gpio_num_t); ++i) {
         conf.pin_bit_mask = 1LL << pins[i];
         gpio_config(&conf);
     }
 
-    gpio_matrix_in(s_config.pin_d0,    I2S0I_DATA_IN0_IDX, false);
-    gpio_matrix_in(s_config.pin_d1,    I2S0I_DATA_IN1_IDX, false);
-    gpio_matrix_in(s_config.pin_d2,    I2S0I_DATA_IN2_IDX, false);
-    gpio_matrix_in(s_config.pin_d3,    I2S0I_DATA_IN3_IDX, false);
-    gpio_matrix_in(s_config.pin_d4,    I2S0I_DATA_IN4_IDX, false);
-    gpio_matrix_in(s_config.pin_d5,    I2S0I_DATA_IN5_IDX, false);
-    gpio_matrix_in(s_config.pin_d6,    I2S0I_DATA_IN6_IDX, false);
-    gpio_matrix_in(s_config.pin_d7,    I2S0I_DATA_IN7_IDX, false);
+    // Route input GPIOs to I2S peripheral using GPIO matrix
+    gpio_matrix_in(s_config.pin_d0, I2S0I_DATA_IN0_IDX, false);
+    gpio_matrix_in(s_config.pin_d1, I2S0I_DATA_IN1_IDX, false);
+    gpio_matrix_in(s_config.pin_d2, I2S0I_DATA_IN2_IDX, false);
+    gpio_matrix_in(s_config.pin_d3, I2S0I_DATA_IN3_IDX, false);
+    gpio_matrix_in(s_config.pin_d4, I2S0I_DATA_IN4_IDX, false);
+    gpio_matrix_in(s_config.pin_d5, I2S0I_DATA_IN5_IDX, false);
+    gpio_matrix_in(s_config.pin_d6, I2S0I_DATA_IN6_IDX, false);
+    gpio_matrix_in(s_config.pin_d7, I2S0I_DATA_IN7_IDX, false);
     gpio_matrix_in(s_config.pin_vsync, I2S0I_V_SYNC_IDX, false);
     gpio_matrix_in(0x38, I2S0I_H_SYNC_IDX, false);
-    gpio_matrix_in(s_config.pin_href,  I2S0I_H_ENABLE_IDX, false);
-    gpio_matrix_in(s_config.pin_pclk,  I2S0I_WS_IN_IDX, false);
+    gpio_matrix_in(s_config.pin_href, I2S0I_H_ENABLE_IDX, false);
+    gpio_matrix_in(s_config.pin_pclk, I2S0I_WS_IN_IDX, false);
 
+    // Enable and configure I2S peripheral
     periph_module_enable(PERIPH_I2S0_MODULE);
+    // Toggle some reset bits in LC_CONF register
+    const uint32_t lc_conf_reset_flags = I2S_IN_RST_S | I2S_AHBM_RST_S
+            | I2S_AHBM_FIFO_RST_S;
+    I2S0.lc_conf.val |= lc_conf_reset_flags;
+    I2S0.lc_conf.val &= ~lc_conf_reset_flags;
+    // Toggle some reset bits in CONF register
+    i2s_conf_reset();
+    // Enable slave mode (sampling clock is external)
+    I2S0.conf.rx_slave_mod = 1;
+    // Enable parallel mode
+    I2S0.conf2.lcd_en = 1;
+    // Use HSYNC/VSYNC/HREF to control sampling
+    I2S0.conf2.camera_en = 1;
+    // Configure clock divider
+    I2S0.clkm_conf.clkm_div_a = 1;
+    I2S0.clkm_conf.clkm_div_b = 0;
+    I2S0.clkm_conf.clkm_div_num = 2;
+    // FIFO will sink data to DMA
+    I2S0.fifo_conf.dscr_en = 1;
+    // FIFO configuration, TBD if needed
+    I2S0.fifo_conf.rx_fifo_mod = 1;
+    I2S0.fifo_conf.rx_fifo_mod_force_en = 1;
+    I2S0.conf_chan.rx_chan_mod = 1;
+    // Grab 16 samples
+    I2S0.sample_rate_conf.rx_bits_mod = 16;
+    // Configure the rest of RX parameters (TBD if all are needed)
+    I2S0.conf.rx_right_first = 1;
+    I2S0.conf.rx_msb_right = 1;
+    I2S0.conf.rx_msb_shift = 0;
+    I2S0.conf.rx_mono = 0;
+    I2S0.conf.rx_short_sync = 0;
 
-    SET_PERI_REG_BITS(I2S_LC_CONF_REG(0), 0x1, 1, I2S_IN_RST_S);
-    SET_PERI_REG_BITS(I2S_LC_CONF_REG(0), 0x1, 0, I2S_IN_RST_S);
-    SET_PERI_REG_BITS(I2S_LC_CONF_REG(0), 0x1, 1, I2S_AHBM_RST_S);
-    SET_PERI_REG_BITS(I2S_LC_CONF_REG(0), 0x1, 0, I2S_AHBM_RST_S);
-    SET_PERI_REG_BITS(I2S_LC_CONF_REG(0), 0x1, 1, I2S_AHBM_FIFO_RST_S);
-    SET_PERI_REG_BITS(I2S_LC_CONF_REG(0), 0x1, 0, I2S_AHBM_FIFO_RST_S);
-    SET_PERI_REG_BITS(I2S_CONF_REG(0), 0x1, 1, I2S_RX_RESET_S);
-    SET_PERI_REG_BITS(I2S_CONF_REG(0), 0x1, 0, I2S_RX_RESET_S);
-    SET_PERI_REG_BITS(I2S_CONF_REG(0), 0x1, 1, I2S_RX_FIFO_RESET_S);
-    SET_PERI_REG_BITS(I2S_CONF_REG(0), 0x1, 0, I2S_RX_FIFO_RESET_S);
-
-    SET_PERI_REG_BITS(I2S_CONF_REG(0), 0x1, 1, I2S_RX_SLAVE_MOD_S);
-    SET_PERI_REG_BITS(I2S_CONF2_REG(0), 0x1, 1, I2S_LCD_EN_S);
-    SET_PERI_REG_BITS(I2S_CONF2_REG(0), 0x1, 1, I2S_CAMERA_EN_S);
-    SET_PERI_REG_BITS(I2S_CLKM_CONF_REG(0), I2S_CLKM_DIV_A, 1, I2S_CLKM_DIV_A_S);
-    SET_PERI_REG_BITS(I2S_CLKM_CONF_REG(0), I2S_CLKM_DIV_B, 0, I2S_CLKM_DIV_B_S);
-    SET_PERI_REG_BITS(I2S_CLKM_CONF_REG(0), I2S_CLKM_DIV_NUM, 2, I2S_CLKM_DIV_NUM_S);
-
-    SET_PERI_REG_BITS(I2S_FIFO_CONF_REG(0), 0x1, 1, I2S_DSCR_EN_S);
-
-    SET_PERI_REG_BITS(I2S_CONF_REG(0), 0x1, 1, I2S_RX_RIGHT_FIRST_S);
-    SET_PERI_REG_BITS(I2S_CONF_REG(0), 0x1, 1, I2S_RX_MSB_RIGHT_S);
-    SET_PERI_REG_BITS(I2S_CONF_REG(0), 0x1, 0, I2S_RX_MSB_SHIFT_S);
-    SET_PERI_REG_BITS(I2S_CONF_REG(0), 0x1, 0, I2S_RX_MONO_S);
-    SET_PERI_REG_BITS(I2S_CONF_REG(0), 0x1, 0, I2S_RX_SHORT_SYNC_S);
-    SET_PERI_REG_BITS(I2S_FIFO_CONF_REG(0), I2S_RX_FIFO_MOD, 1, I2S_RX_FIFO_MOD_S);
-    SET_PERI_REG_BITS(I2S_FIFO_CONF_REG(0), 0x1, 1, I2S_RX_FIFO_MOD_FORCE_EN_S);
-    SET_PERI_REG_BITS(I2S_CONF_CHAN_REG(0), I2S_RX_CHAN_MOD, 1, I2S_RX_CHAN_MOD_S);
-    SET_PERI_REG_BITS(I2S_SAMPLE_RATE_CONF_REG(0), I2S_RX_BITS_MOD, 16, I2S_RX_BITS_MOD_S);
-
+    // Allocate I2S interrupt, keep it disabled
+    esp_intr_alloc(ETS_I2S0_INTR_SOURCE,
+            ESP_INTR_FLAG_INTRDISABLED | ESP_INTR_FLAG_LEVEL1 | ESP_INTR_FLAG_IRAM,
+            &i2s_isr, NULL, &s_i2s_intr_handle);
 }
 
-static void i2s_fill_buf(int index) {
-    ESP_INTR_DISABLE(ETS_I2S0_INUM);
-
-    SET_PERI_REG_BITS(I2S_RXEOF_NUM_REG(0), I2S_RX_EOF_NUM, (buf_line_width - 2) * 2, I2S_RX_EOF_NUM_S);
-    SET_PERI_REG_BITS(I2S_IN_LINK_REG(0), I2S_INLINK_ADDR, ((uint32_t) &s_dma_desc[index]), I2S_INLINK_ADDR_S);
-    SET_PERI_REG_BITS(I2S_IN_LINK_REG(0), 0x1, 1, I2S_INLINK_START_S);
-
-    REG_WRITE(I2S_INT_CLR_REG(0), (REG_READ(I2S_INT_RAW_REG(0)) & 0xffffffc0) | 0x3f);
-
-    REG_WRITE(I2S_CONF_REG(0), REG_READ(I2S_CONF_REG(0)) & 0xfffffff0);
-    (void) REG_READ(I2S_CONF_REG(0));
-    REG_WRITE(I2S_CONF_REG(0), (REG_READ(I2S_CONF_REG(0)) & 0xfffffff0) | 0xf);
-    (void) REG_READ(I2S_CONF_REG(0));
-    REG_WRITE(I2S_CONF_REG(0), REG_READ(I2S_CONF_REG(0)) & 0xfffffff0);
-    while (GET_PERI_REG_BITS2(I2S_STATE_REG(0), 0x1, I2S_TX_FIFO_RESET_BACK_S));
-
-    SET_PERI_REG_BITS(I2S_INT_ENA_REG(0), 0x1, 1, I2S_IN_DONE_INT_ENA_S);
-    ESP_INTR_ENABLE(ETS_I2S0_INUM);
-    SET_PERI_REG_BITS(I2S_CONF_REG(0), 0x1, 1, I2S_RX_START_S);
+static void i2s_fill_buf(int index)
+{
+    esp_intr_disable(s_i2s_intr_handle);
+    I2S0.rx_eof_num = (s_buf_line_width - 2) * 2;
+    I2S0.in_link.addr = (uint32_t) &s_dma_desc[index];
+    I2S0.in_link.start = 1;
+    I2S0.int_clr.val = I2S0.int_raw.val;
+    i2s_conf_reset();
+    I2S0.int_ena.in_done = 1;
+    esp_intr_enable(s_i2s_intr_handle);
+    I2S0.conf.rx_start = 1;
 }
 
-static void i2s_stop() {
-    ESP_INTR_DISABLE(ETS_I2S0_INUM);
-
-    REG_WRITE(I2S_CONF_REG(0), REG_READ(I2S_CONF_REG(0)) & 0xfffffff0);
-    (void) REG_READ(I2S_CONF_REG(0));
-    REG_WRITE(I2S_CONF_REG(0), (REG_READ(I2S_CONF_REG(0)) & 0xfffffff0) | 0xf);
-    (void) REG_READ(I2S_CONF_REG(0));
-    REG_WRITE(I2S_CONF_REG(0), REG_READ(I2S_CONF_REG(0)) & 0xfffffff0);
-
-    SET_PERI_REG_BITS(I2S_CONF_REG(0), 0x1, 0, I2S_RX_START_S);
-    i2s_running = false;
+static void i2s_stop()
+{
+    esp_intr_disable(s_i2s_intr_handle);
+    i2s_conf_reset();
+    I2S0.conf.rx_start = 0;
+    s_i2s_running = false;
 }
 
 static void i2s_run(size_t line_width, int height)
 {
-    buf_line_width = line_width;
-    buf_height = height;
+    s_buf_line_width = line_width;
+    s_buf_height = height;
 
     // wait for vsync
-    ESP_LOGD(TAG, "Waiting for VSYNC");
-    while(gpio_get_level(s_config.pin_vsync) != 0);
-    while(gpio_get_level(s_config.pin_vsync) == 0);
+    ESP_LOGD(TAG, "Waiting for positive edge on VSYNC");
+    while (gpio_get_level(s_config.pin_vsync) == 0) {
+        ;
+    }
+    while (gpio_get_level(s_config.pin_vsync) != 0) {
+        ;
+    }
     ESP_LOGD(TAG, "Got VSYNC");
-    // wait a bit
-    delay(2);
 
     // start RX
-    cur_buffer = 0;
-    line_count = 0;
-    isr_count = 0;
-    i2s_running = true;
-    i2s_fill_buf(cur_buffer);
+    s_cur_buffer = 0;
+    s_line_count = 0;
+    s_isr_count = 0;
+    s_i2s_running = true;
+    i2s_fill_buf(s_cur_buffer);
 }
 
-static void IRAM_ATTR i2s_isr(void* arg) {
-    REG_WRITE(I2S_INT_CLR_REG(0), (REG_READ(I2S_INT_RAW_REG(0)) & 0xffffffc0) | 0x3f);
-    cur_buffer = !cur_buffer;
-    if (isr_count == buf_height - 2) {
+static void IRAM_ATTR i2s_isr(void* arg)
+{
+    I2S0.int_clr.val = I2S0.int_raw.val;
+    s_cur_buffer = !s_cur_buffer;
+    if (s_isr_count == s_buf_height - 2) {
         i2s_stop();
+    } else {
+        i2s_fill_buf(s_cur_buffer);
+        ++s_isr_count;
     }
-    else {
-        i2s_fill_buf(cur_buffer);
-        ++isr_count;
-    }
-    static BaseType_t xHigherPriorityTaskWoken;
-    xSemaphoreGiveFromISR(data_ready, &xHigherPriorityTaskWoken);
+    BaseType_t xHigherPriorityTaskWoken;
+    xSemaphoreGiveFromISR(s_data_ready, &xHigherPriorityTaskWoken);
     if (xHigherPriorityTaskWoken != pdFALSE) {
         portYIELD_FROM_ISR();
     }
 }
 
-static void line_filter_task(void *pvParameters) {
-    static int prev_buf = -1;
+static void line_filter_task(void *pvParameters)
+{
+    int prev_buf = -1;
     while (true) {
-        xSemaphoreTake(data_ready, portMAX_DELAY);
-        int buf_idx = !cur_buffer;
+        xSemaphoreTake(s_data_ready, portMAX_DELAY);
+        int buf_idx = !s_cur_buffer;
         if (prev_buf != -1 && prev_buf == buf_idx) {
-            ets_printf("! %d\n", line_count);
+            ets_printf("! %d\n", s_line_count);
         }
-        uint8_t* pfb = s_fb + line_count * buf_line_width;
-
-        const uint32_t* buf = s_dma_buf[buf_idx];   //Get pointer to current DMA buffer
-        for (int i = 0; i < buf_line_width; ++i) {  
-            uint32_t v = *buf;                      //Get 32bit from DMA buffer 1 Pixel = (2Byte i2s overhead + 2Byte pixeldata)
-            uint8_t comp = (v & 0xff0000) >> 16;    //Extract third Byte. (Only the luminance information from the pixel)
-            *pfb = comp;                            //Write Byte to target buffer
-            ++buf;                                  //Set source pointer 32bit forward
-            ++pfb;                                  //Set target pointer 8bit forward
+        uint8_t* pfb = s_fb + s_line_count * s_buf_line_width;
+        // Get pointer to the current DMA buffer
+        const uint32_t* buf = s_dma_buf[buf_idx];
+        for (int i = 0; i < s_buf_line_width; ++i) {
+            // Get 32 bit from DMA buffer
+            // 1 Pixel = (2Byte i2s overhead + 2Byte pixeldata)
+            uint32_t v = *buf;
+            // Extract third byte (only the luminance information from the pixel)
+            uint8_t comp = (v & 0xff0000) >> 16;
+            // Write byte to target buffer
+            *pfb = comp;
+            // Set source pointer 32 bit forward
+            ++buf;
+            // Set target pointer 8 bit forward
+            ++pfb;
         }
-        
-        ++line_count;
+        ++s_line_count;
         prev_buf = buf_idx;
-        if (!i2s_running) {
+        if (!s_i2s_running) {
             prev_buf = -1;
-            xSemaphoreGive(frame_ready);
+            xSemaphoreGive(s_frame_ready);
         }
     }
 }
