@@ -35,6 +35,7 @@ static const uint8_t default_regs[][2] = {
 #endif
     { COM8,     COM8_SET(COM8_BNDF_EN | COM8_AGC_EN | COM8_AEC_EN) },
     { COM9,     COM9_AGC_SET(COM9_AGC_GAIN_8x)},
+    {COM10,     COM10_VSYNC_NEG}, //Invert VSYNC
     { 0x2c,     0x0c },
     { 0x33,     0x78 },
     { 0x3a,     0x33 },
