@@ -48,7 +48,7 @@ static const uint8_t default_regs[][2] = {
     {COM8,          0xF0},
     {COM6,          0xC5},
     {COM9,          0x11},
-    {COM10,         (1 << 1) | (1 << 5)},
+    {COM10,         COM10_VSYNC_NEG}, //Invert VSYNC
     {BDBASE,        0x7F},
     {DBSTEP,        0x03},
     {AEW,           0x96},
