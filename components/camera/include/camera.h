@@ -47,6 +47,7 @@ typedef struct {
 #define ESP_ERR_CAMERA_BASE 0x20000
 #define ESP_ERR_CAMERA_NOT_DETECTED             (ESP_ERR_CAMERA_BASE + 1)
 #define ESP_ERR_CAMERA_FAILED_TO_SET_FRAME_SIZE (ESP_ERR_CAMERA_BASE + 2)
+#define ESP_ERR_CAMERA_NOT_SUPPORTED            (ESP_ERR_CAMERA_BASE + 3)
 
 /**
  * @brief Initialize the camera

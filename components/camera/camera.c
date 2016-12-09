@@ -37,7 +37,12 @@
 #include "soc/i2s_struct.h"
 #include "soc/io_mux_reg.h"
 #include "sensor.h"
-#include "ov7725.h"
+#if CONFIG_OV2640_SUPPORT
+    #include "ov2640.h"
+#endif
+#if CONFIG_OV7725_SUPPORT
+    #include "ov7725.h"
+#endif
 #include <stdlib.h>
 #include <string.h>
 #include "rom/lldesc.h"
@@ -136,18 +141,53 @@ esp_err_t camera_init(const camera_config_t* config)
     gpio_set_level(s_config.pin_reset, 1);
     delay(10);
     ESP_LOGD(TAG, "Searching for camera address");
-    uint8_t addr = SCCB_Probe();
-    if (addr == 0) {
-        ESP_LOGE(TAG, "Camera address not found");
-        return ESP_ERR_CAMERA_NOT_DETECTED;
-    }
-    ESP_LOGD(TAG, "Detected camera at address=0x%02x", addr);
-    s_sensor.slv_addr = addr;
+    
+    /* Probe the sensor */
+    s_sensor.slv_addr = SCCB_Probe();
+    if (s_sensor.slv_addr == 0) {
+        /* Sensor has been held in reset,
+           so the reset line is active high */
+        s_sensor.reset_pol = ACTIVE_HIGH;
 
-    ov7725_init(&s_sensor);
+        /* Pull the sensor out of the reset state */
+        gpio_set_level(s_config.pin_reset, 0);
+        delay(10);
+
+        /* Probe again to set the slave addr */
+        s_sensor.slv_addr = SCCB_Probe();
+        if (s_sensor.slv_addr == 0)  {
+            // Probe failed
+            return ESP_ERR_CAMERA_NOT_DETECTED;
+        }
+    }
+
+    ESP_LOGD(TAG, "Detected camera at address=0x%02x", s_sensor.slv_addr);
+    
+    s_sensor.id.PID  = SCCB_Read(s_sensor.slv_addr, REG_PID);
+    s_sensor.id.VER  = SCCB_Read(s_sensor.slv_addr, REG_VER);
+    s_sensor.id.MIDL = SCCB_Read(s_sensor.slv_addr, REG_MIDL);
+    s_sensor.id.MIDH = SCCB_Read(s_sensor.slv_addr, REG_MIDH);
+
     ESP_LOGD(TAG, "Camera PID=0x%02x VER=0x%02x MIDL=0x%02x MIDH=0x%02x",
-            s_sensor.id.pid, s_sensor.id.ver, s_sensor.id.midh,
-            s_sensor.id.midl);
+        s_sensor.id.pid, s_sensor.id.ver, s_sensor.id.midh,
+        s_sensor.id.midl);
+
+    switch (sensor.id.PID) {
+#if CONFIG_OV2640_SUPPORT
+        case OV2640_PID:
+            ov2640_init(&sensor);
+            break;
+#endif
+#if CONFIG_OV7725_SUPPORT
+        case OV7725_PID:
+            ov7725_init(&sensor);
+            break;
+#endif
+        default:
+            /* Sensor not supported */
+            ESP_LOGD(TAG, "Detected camera not supported.");
+            return ESP_ERR_CAMERA_NOT_SUPPORTED;
+    }
 
     ESP_LOGD(TAG, "Doing SW reset of sensor");
     s_sensor.reset(&s_sensor);
