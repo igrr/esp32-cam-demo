@@ -172,15 +172,15 @@ esp_err_t camera_init(const camera_config_t* config)
         s_sensor.id.pid, s_sensor.id.ver, s_sensor.id.midh,
         s_sensor.id.midl);
 
-    switch (sensor.id.PID) {
+    switch (s_sensor.id.PID) {
 #if CONFIG_OV2640_SUPPORT
         case OV2640_PID:
-            ov2640_init(&sensor);
+            ov2640_init(&s_sensor);
             break;
 #endif
 #if CONFIG_OV7725_SUPPORT
         case OV7725_PID:
-            ov7725_init(&sensor);
+            ov7725_init(&s_sensor);
             break;
 #endif
         default:
