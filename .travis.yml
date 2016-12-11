@@ -1,19 +1,28 @@
-language: c
-sudo: required
+sudo: false
+language: bash
+os:
+  - linux
+
+addons:
+  apt:
+    packages:
+      - gperf
+      - python
+      - python-serial
 
 before_install:
   # Save path to the git respository
   - PROJECT_PATH=$(pwd)
 
 install:
-  # Install ESP32 toochain following steps exaclty as desribed
+  # Install ESP32 toochain following steps as desribed
   # in http://esp-idf.readthedocs.io/en/latest/linux-setup.html
   #
+  # Get required packages - already done above, see addons: apt: packages:
+  # - sudo apt-get install git wget make libncurses-dev flex bison gperf python python-serial
   # Prepare directory for the toolchain
   - mkdir -p ~/esp
   - cd ~/esp
-  # Get required packages
-  - sudo apt-get install git wget make libncurses-dev flex bison gperf python python-serial
   # Download binary toolchain for the ESP32
   - wget https://dl.espressif.com/dl/xtensa-esp32-elf-linux64-1.22.0-59.tar.gz
   - tar -xzf xtensa-esp32-elf-linux64-1.22.0-59.tar.gz
@@ -29,4 +38,3 @@ script:
   - cd $PROJECT_PATH
   # Build project from the git repository
   - make
-  

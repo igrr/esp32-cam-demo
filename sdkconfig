@@ -31,7 +31,7 @@ CONFIG_SECURE_BOOTLOADER_DISABLED=y
 #
 # Example Configuration
 #
-CONFIG_ENABLE_TEST_PATTERN=y
+CONFIG_ENABLE_TEST_PATTERN=n
 
 #
 # Serial flasher config
