@@ -9,7 +9,6 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
-#include <wiring.h>
 #include "sccb.h"
 #include "ov2640.h"
 #include "ov2640_regs.h"
@@ -394,7 +393,7 @@ static int reset(sensor_t *sensor)
     SCCB_Write(sensor->slv_addr, COM7, COM7_SRST);
 
     /* delay n ms */
-    systick_sleep(10);
+    delay(10);
 
     i = 0;
     regs = default_regs;
@@ -443,7 +442,7 @@ static int set_pixformat(sensor_t *sensor, pixformat_t pixformat)
     }
 
     /* delay n ms */
-    systick_sleep(30);
+    delay(30);
 
     return 0;
 }
@@ -490,7 +489,7 @@ static int set_framesize(sensor_t *sensor, framesize_t framesize)
     ret |= SCCB_Write(sensor->slv_addr, R_BYPASS, R_BYPASS_DSP_EN);
 
     /* delay n ms */
-    systick_sleep(30);
+    delay(30);
 
     return ret;
 }

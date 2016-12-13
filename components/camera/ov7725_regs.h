@@ -23,8 +23,8 @@
 #define COM2_OUT_DRIVE_3x       0x02 /* Output drive capability 3x */
 #define COM2_OUT_DRIVE_4x       0x03 /* Output drive capability 4x */
 
-#define PID                     0x0A /* Product ID Number MSB */
-#define VER                     0x0B /* Product ID Number LSB */
+#define REG_PID                     0x0A /* Product ID Number MSB */
+#define REG_VER                     0x0B /* Product ID Number LSB */
 
 #define COM3                    0x0C /* Common Control 3                                        */
 #define COM3_VFLIP              0x80 /* Vertical flip image ON/OFF selection                    */
@@ -128,8 +128,8 @@
 #define VSTART                  0x19 /* Vertical Frame (row) Start 8 MSBs (1 LSB is at HREF[6]) */
 #define VSIZE                   0x1A /* Vertical Sensor Size (1 LSB is at HREF[2]) */
 #define PSHFT                   0x1B /* Data Format - Pixel Delay Select */
-#define MIDH                    0x1C /* Manufacturer ID Byte – High */
-#define MIDL                    0x1D /* Manufacturer ID Byte – Low */
+#define REG_MIDH                    0x1C /* Manufacturer ID Byte – High */
+#define REG_MIDL                    0x1D /* Manufacturer ID Byte – Low */
 #define LAEC                    0x1F /* Fine AEC Value - defines exposure value less than one row period */
 
 #define COM11                   0x20 /* Common Control 11 */

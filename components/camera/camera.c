@@ -53,6 +53,12 @@
 
 # define ENABLE_TEST_PATTERN CONFIG_ENABLE_TEST_PATTERN
 
+#define REG_PID        0x0A
+#define REG_VER        0x0B
+
+#define REG_MIDH       0x1C
+#define REG_MIDL       0x1D
+
 static const char* TAG = "camera";
 
 static camera_config_t s_config;
@@ -143,6 +149,7 @@ esp_err_t camera_init(const camera_config_t* config)
     ESP_LOGD(TAG, "Searching for camera address");
     
     /* Probe the sensor */
+    delay(10);
     s_sensor.slv_addr = SCCB_Probe();
     if (s_sensor.slv_addr == 0) {
         /* Sensor has been held in reset,
@@ -167,10 +174,10 @@ esp_err_t camera_init(const camera_config_t* config)
     s_sensor.id.VER  = SCCB_Read(s_sensor.slv_addr, REG_VER);
     s_sensor.id.MIDL = SCCB_Read(s_sensor.slv_addr, REG_MIDL);
     s_sensor.id.MIDH = SCCB_Read(s_sensor.slv_addr, REG_MIDH);
-
+    delay(10);
     ESP_LOGD(TAG, "Camera PID=0x%02x VER=0x%02x MIDL=0x%02x MIDH=0x%02x",
-        s_sensor.id.pid, s_sensor.id.ver, s_sensor.id.midh,
-        s_sensor.id.midl);
+        s_sensor.id.PID, s_sensor.id.VER, s_sensor.id.MIDH,
+        s_sensor.id.MIDL);
 
     switch (s_sensor.id.PID) {
 #if CONFIG_OV2640_SUPPORT

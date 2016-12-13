@@ -294,10 +294,10 @@ int ov7725_init(sensor_t *sensor)
     sensor->set_vflip = set_vflip;
 
     // Retrieve sensor's signature
-    sensor->id.midh = SCCB_Read(sensor->slv_addr, MIDH);
-    sensor->id.midl = SCCB_Read(sensor->slv_addr, MIDL);
-    sensor->id.pid = SCCB_Read(sensor->slv_addr, PID);
-    sensor->id.ver = SCCB_Read(sensor->slv_addr, VER);
+    sensor->id.MIDH = SCCB_Read(sensor->slv_addr, REG_MIDH);
+    sensor->id.MIDL = SCCB_Read(sensor->slv_addr, REG_MIDL);
+    sensor->id.PID = SCCB_Read(sensor->slv_addr, REG_PID);
+    sensor->id.VER = SCCB_Read(sensor->slv_addr, REG_VER);
 
     // Set sensor flags
     SENSOR_HW_FLAGS_SET(sensor, SENSOR_HW_FLAGS_VSYNC, 1);
