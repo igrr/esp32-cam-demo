@@ -367,9 +367,9 @@ static void i2s_init()
     I2S0.conf_chan.rx_chan_mod = 1;
     // Grab 16 samples
     I2S0.sample_rate_conf.rx_bits_mod = 16;
-    // Configure the rest of RX parameters (TBD if all are needed)
-    I2S0.conf.rx_right_first = 1;
-    I2S0.conf.rx_msb_right = 1;
+    // Clear flags which are used in I2S serial mode
+    I2S0.conf.rx_right_first = 0;
+    I2S0.conf.rx_msb_right = 0;
     I2S0.conf.rx_msb_shift = 0;
     I2S0.conf.rx_mono = 0;
     I2S0.conf.rx_short_sync = 0;
@@ -383,11 +383,11 @@ static void i2s_init()
 static void i2s_fill_buf(int index)
 {
     esp_intr_disable(s_i2s_intr_handle);
-    I2S0.rx_eof_num = (s_buf_line_width - 2) * 2;
+    i2s_conf_reset();
+    I2S0.rx_eof_num = s_buf_line_width;
     I2S0.in_link.addr = (uint32_t) &s_dma_desc[index];
     I2S0.in_link.start = 1;
     I2S0.int_clr.val = I2S0.int_raw.val;
-    i2s_conf_reset();
     I2S0.int_ena.in_done = 1;
     esp_intr_enable(s_i2s_intr_handle);
     I2S0.conf.rx_start = 1;
@@ -428,7 +428,7 @@ static void IRAM_ATTR i2s_isr(void* arg)
 {
     I2S0.int_clr.val = I2S0.int_raw.val;
     s_cur_buffer = !s_cur_buffer;
-    if (s_isr_count == s_buf_height - 2) {
+    if (s_isr_count == s_buf_height) {
         i2s_stop();
     } else {
         i2s_fill_buf(s_cur_buffer);
