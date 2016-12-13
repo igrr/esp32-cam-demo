@@ -4,7 +4,7 @@ Code provided in this repository gets the image from camera and prints it out as
 
 ## Build Status
 
-[![Build Status](https://travis-ci.org/igrr/esp32-cam-demo.svg?branch=master)](https://travis-ci.org/igrr/esp32-cam-demo)
+[![Build Status](https://travis-ci.org/Oitzu/esp32-cam-demo.svg?branch=multi-cam-support)](https://travis-ci.org/Oitzu/esp32-cam-demo)
 
 ## Table of Contents
 - [Components](#components)
