@@ -142,6 +142,13 @@ esp_err_t camera_init(const camera_config_t* config)
     ESP_LOGD(TAG, "Initializing SSCB");
     SCCB_Init(s_config.pin_sscb_sda, s_config.pin_sscb_scl);
     ESP_LOGD(TAG, "Resetting camera");
+	
+	gpio_config_t conf = {0};
+    conf.pin_bit_mask = 1LL << s_config.pin_reset;
+	conf.mode = GPIO_MODE_OUTPUT;
+	
+	gpio_config(&conf);
+	
     gpio_set_level(s_config.pin_reset, 0);
     delay(1);
     gpio_set_level(s_config.pin_reset, 1);
@@ -152,24 +159,12 @@ esp_err_t camera_init(const camera_config_t* config)
     delay(10);
     s_sensor.slv_addr = SCCB_Probe();
     if (s_sensor.slv_addr == 0) {
-        /* Sensor has been held in reset,
-           so the reset line is active high */
-        s_sensor.reset_pol = ACTIVE_HIGH;
 
-        /* Pull the sensor out of the reset state */
-        gpio_set_level(s_config.pin_reset, 0);
-        delay(10);
-
-        /* Probe again to set the slave addr */
-        s_sensor.slv_addr = SCCB_Probe();
-        if (s_sensor.slv_addr == 0)  {
-            // Probe failed
             return ESP_ERR_CAMERA_NOT_DETECTED;
-        }
+
     }
 
     ESP_LOGD(TAG, "Detected camera at address=0x%02x", s_sensor.slv_addr);
-    
     s_sensor.id.PID  = SCCB_Read(s_sensor.slv_addr, REG_PID);
     s_sensor.id.VER  = SCCB_Read(s_sensor.slv_addr, REG_VER);
     s_sensor.id.MIDL = SCCB_Read(s_sensor.slv_addr, REG_MIDL);
@@ -209,7 +204,9 @@ esp_err_t camera_init(const camera_config_t* config)
     ESP_LOGD(TAG, "Test pattern enabled");
 #endif
 
-    framesize_t framesize = FRAMESIZE_QVGA;
+	s_sensor.set_pixformat(&s_sensor, PIXFORMAT_YUV422);
+
+    framesize_t framesize = FRAMESIZE_QVGA; 
     s_fb_w = resolution[framesize][0];
     s_fb_h = resolution[framesize][1];
     ESP_LOGD(TAG, "Setting frame size at %dx%d", s_fb_w, s_fb_h);
@@ -250,9 +247,10 @@ esp_err_t camera_init(const camera_config_t* config)
     while (gpio_get_level(s_config.pin_vsync) == 0) {
         ;
     }
-
+ 
     ESP_LOGD(TAG, "Init done");
     s_initialized = true;
+
     return ESP_OK;
 }
 

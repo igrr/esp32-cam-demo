@@ -34,7 +34,7 @@ static const uint8_t default_regs[][2] = {
 #endif
     { COM8,     COM8_SET(COM8_BNDF_EN | COM8_AGC_EN | COM8_AEC_EN) },
     { COM9,     COM9_AGC_SET(COM9_AGC_GAIN_8x)},
-    {COM10,     COM10_VSYNC_NEG}, //Invert VSYNC
+    //{COM10,     COM10_VSYNC_NEG}, //Invert VSYNC
     { 0x2c,     0x0c },
     { 0x33,     0x78 },
     { 0x3a,     0x33 },
@@ -322,6 +322,27 @@ static const uint8_t uxga_regs[][2] = {
         {0, 0},
 };
 
+static const uint8_t qvga_regs[][2] = {
+     { 0xff, 0x00 },  
+     { 0xe0, 0x04 },  
+     { 0xc0, 0xc8 },   
+     { 0xc1, 0x96 },  
+     { 0x86, 0x3d },  
+     { 0x50, 0x92 },  
+     { 0x51, 0x90 },  
+     { 0x52, 0x2c },  
+     { 0x53, 0x00 },  
+     { 0x54, 0x00 },  
+     { 0x55, 0x88 },  
+     { 0x57, 0x00 },  
+     { 0x5a, 0x50 },  
+     { 0x5b, 0x3c },  
+     { 0x5c, 0x00 },  
+     { 0xd3, 0x04 },  
+     { 0xe0,  0x00 },
+     {0, 0},
+};   
+
 static const uint8_t yuv422_regs[][2] = {
         { BANK_SEL, BANK_SEL_DSP },
         { RESET,   RESET_DVP},
@@ -456,23 +477,30 @@ static int set_framesize(sensor_t *sensor, framesize_t framesize)
 
     int i=0;
     const uint8_t (*regs)[2];
-
-    if (framesize <= FRAMESIZE_SVGA) {
+    
+    switch (framesize) {
+    case FRAMESIZE_SVGA:
         clkrc =0x80;
         regs = svga_regs;
-    } else {
+        break;
+    case FRAMESIZE_QVGA:
+        clkrc =0x82;
+        regs = qvga_regs;
+        break;
+    default:
         clkrc =0x81;
         regs = uxga_regs;
-    }
-
+}
+    
     /* Disable DSP */
+
     ret |= SCCB_Write(sensor->slv_addr, BANK_SEL, BANK_SEL_DSP);
     ret |= SCCB_Write(sensor->slv_addr, R_BYPASS, R_BYPASS_DSP_BYPAS);
 
     /* Write output width */
-    ret |= SCCB_Write(sensor->slv_addr, ZMOW, (w>>2)&0xFF); /* OUTW[7:0] (real/4) */
-    ret |= SCCB_Write(sensor->slv_addr, ZMOH, (h>>2)&0xFF); /* OUTH[7:0] (real/4) */
-    ret |= SCCB_Write(sensor->slv_addr, ZMHH, ((h>>8)&0x04)|((w>>10)&0x03)); /* OUTH[8]/OUTW[9:8] */
+    ret |= SCCB_Write(sensor->slv_addr, ZMOW, (w>>2)&0xFF); // OUTW[7:0] (real/4)
+    ret |= SCCB_Write(sensor->slv_addr, ZMOH, (h>>2)&0xFF); // OUTH[7:0] (real/4)
+    ret |= SCCB_Write(sensor->slv_addr, ZMHH, ((h>>8)&0x04)|((w>>10)&0x03)); // OUTH[8]/OUTW[9:8]
 
     /* Set CLKRC */
     ret |= SCCB_Write(sensor->slv_addr, BANK_SEL, BANK_SEL_SENSOR);
@@ -487,7 +515,6 @@ static int set_framesize(sensor_t *sensor, framesize_t framesize)
     /* Enable DSP */
     ret |= SCCB_Write(sensor->slv_addr, BANK_SEL, BANK_SEL_DSP);
     ret |= SCCB_Write(sensor->slv_addr, R_BYPASS, R_BYPASS_DSP_EN);
-
     /* delay n ms */
     delay(30);
 
@@ -731,11 +758,11 @@ int ov2640_init(sensor_t *sensor)
     sensor->set_vflip = set_vflip;
 
     // Set sensor flags
-    SENSOR_HW_FLAGS_SET(sensor, SENSOR_HW_FLAGS_VSYNC, 0);
+    SENSOR_HW_FLAGS_SET(sensor, SENSOR_HW_FLAGS_VSYNC, 1);
     SENSOR_HW_FLAGS_SET(sensor, SENSOR_HW_FLAGS_HSYNC, 0);
     SENSOR_HW_FLAGS_SET(sensor, SENSOR_HW_FLAGS_PIXCK, 1);
-    SENSOR_HW_FLAGS_SET(sensor, SENSOR_HW_FLAGS_FSYNC, 0);
-    SENSOR_HW_FLAGS_SET(sensor, SENSOR_HW_FLAGS_JPEGE, 1);
+    SENSOR_HW_FLAGS_SET(sensor, SENSOR_HW_FLAGS_FSYNC, 1);
+    SENSOR_HW_FLAGS_SET(sensor, SENSOR_HW_FLAGS_JPEGE, 0);
 
     return 0;
 }
