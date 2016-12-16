@@ -141,18 +141,20 @@ esp_err_t camera_init(const camera_config_t* config)
     enable_out_clock();
     ESP_LOGD(TAG, "Initializing SSCB");
     SCCB_Init(s_config.pin_sscb_sda, s_config.pin_sscb_scl);
+    
     ESP_LOGD(TAG, "Resetting camera");
-	
-	gpio_config_t conf = {0};
+    gpio_config_t conf = {0};
     conf.pin_bit_mask = 1LL << s_config.pin_reset;
-	conf.mode = GPIO_MODE_OUTPUT;
-	
-	gpio_config(&conf);
-	
+    conf.mode = GPIO_MODE_OUTPUT;
+    gpio_config(&conf);
+
+    gpio_pulldown_en(s_config.pin_reset);
     gpio_set_level(s_config.pin_reset, 0);
-    delay(1);
+    delay(10);
+    gpio_pulldown_dis(s_config.pin_reset);
     gpio_set_level(s_config.pin_reset, 1);
     delay(10);
+    
     ESP_LOGD(TAG, "Searching for camera address");
     
     /* Probe the sensor */
@@ -194,17 +196,7 @@ esp_err_t camera_init(const camera_config_t* config)
     ESP_LOGD(TAG, "Doing SW reset of sensor");
     s_sensor.reset(&s_sensor);
 
-#if ENABLE_TEST_PATTERN
-    /* Test pattern may get handy
-       if you are unable to get the live image right.
-       Once test pattern is enable, sensor will output
-       vertical shaded bars instead of live image.
-    */
-    s_sensor.set_colorbar(&s_sensor, 1);
-    ESP_LOGD(TAG, "Test pattern enabled");
-#endif
-
-	s_sensor.set_pixformat(&s_sensor, PIXFORMAT_YUV422);
+    s_sensor.set_pixformat(&s_sensor, PIXFORMAT_YUV422);
 
     framesize_t framesize = FRAMESIZE_QVGA; 
     s_fb_w = resolution[framesize][0];
@@ -214,6 +206,16 @@ esp_err_t camera_init(const camera_config_t* config)
         ESP_LOGE(TAG, "Failed to set frame size");
         return ESP_ERR_CAMERA_FAILED_TO_SET_FRAME_SIZE;
     }
+
+#if ENABLE_TEST_PATTERN
+    /* Test pattern may get handy
+       if you are unable to get the live image right.
+       Once test pattern is enable, sensor will output
+       vertical shaded bars instead of live image.
+    */
+    s_sensor.set_colorbar(&s_sensor, 1);
+    ESP_LOGD(TAG, "Test pattern enabled");
+#endif
 
     s_fb_size = s_fb_w * s_fb_h;
     ESP_LOGD(TAG, "Allocating frame buffer (%dx%d, %d bytes)", s_fb_w, s_fb_h,

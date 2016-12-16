@@ -320,28 +320,7 @@ static const uint8_t uxga_regs[][2] = {
         { R_BYPASS, R_BYPASS_DSP_EN },
         { RESET,    0x00 },
         {0, 0},
-};
-
-static const uint8_t qvga_regs[][2] = {
-     { 0xff, 0x00 },  
-     { 0xe0, 0x04 },  
-     { 0xc0, 0xc8 },   
-     { 0xc1, 0x96 },  
-     { 0x86, 0x3d },  
-     { 0x50, 0x92 },  
-     { 0x51, 0x90 },  
-     { 0x52, 0x2c },  
-     { 0x53, 0x00 },  
-     { 0x54, 0x00 },  
-     { 0x55, 0x88 },  
-     { 0x57, 0x00 },  
-     { 0x5a, 0x50 },  
-     { 0x5b, 0x3c },  
-     { 0x5c, 0x00 },  
-     { 0xd3, 0x04 },  
-     { 0xe0,  0x00 },
-     {0, 0},
-};   
+}; 
 
 static const uint8_t yuv422_regs[][2] = {
         { BANK_SEL, BANK_SEL_DSP },
@@ -484,8 +463,8 @@ static int set_framesize(sensor_t *sensor, framesize_t framesize)
         regs = svga_regs;
         break;
     case FRAMESIZE_QVGA:
-        clkrc =0x82;
-        regs = qvga_regs;
+        clkrc =0xA0; //0xBF
+        regs = uxga_regs;
         break;
     default:
         clkrc =0x81;
