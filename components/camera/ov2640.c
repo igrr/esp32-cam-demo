@@ -353,6 +353,8 @@ static const uint8_t jpeg_regs[][2] = {
         {0, 0},
 };
 
+//|IMAGE_MODE_HREF_VSYNC
+
 #define NUM_BRIGHTNESS_LEVELS (5)
 static const uint8_t brightness_regs[NUM_BRIGHTNESS_LEVELS + 1][5] = {
     { BPADDR, BPDATA, BPADDR, BPDATA, BPDATA },
@@ -459,7 +461,7 @@ static int set_framesize(sensor_t *sensor, framesize_t framesize)
     
     switch (framesize) {
     case FRAMESIZE_SVGA:
-        clkrc =0x80;
+        clkrc =0xBF;
         regs = svga_regs;
         break;
     case FRAMESIZE_QVGA:
@@ -467,7 +469,7 @@ static int set_framesize(sensor_t *sensor, framesize_t framesize)
         regs = uxga_regs;
         break;
     default:
-        clkrc =0x81;
+        clkrc =0xBF;
         regs = uxga_regs;
 }
     

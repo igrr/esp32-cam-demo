@@ -79,6 +79,10 @@ static volatile bool s_i2s_running = 0;
 static SemaphoreHandle_t s_data_ready;
 static SemaphoreHandle_t s_frame_ready;
 static intr_handle_t s_i2s_intr_handle = NULL;
+static intr_handle_t s_vsync_intr_handle = NULL;
+static bool jpeg = false;
+
+static int href_counter = 0;
 
 const int resolution[][2] = {
     {40,    30 },    /* 40x30 */
@@ -99,9 +103,11 @@ const int resolution[][2] = {
 
 static void i2s_init();
 static void i2s_run(size_t line_width, int height);
+static void IRAM_ATTR gpioCallback(void* arg);
 static void IRAM_ATTR i2s_isr(void* arg);
 static esp_err_t dma_desc_init(int line_width);
 static void line_filter_task(void *pvParameters);
+static void i2s_stop();
 
 static void enable_out_clock()
 {
@@ -148,10 +154,8 @@ esp_err_t camera_init(const camera_config_t* config)
     conf.mode = GPIO_MODE_OUTPUT;
     gpio_config(&conf);
 
-    gpio_pulldown_en(s_config.pin_reset);
     gpio_set_level(s_config.pin_reset, 0);
     delay(10);
-    gpio_pulldown_dis(s_config.pin_reset);
     gpio_set_level(s_config.pin_reset, 1);
     delay(10);
     
@@ -195,17 +199,21 @@ esp_err_t camera_init(const camera_config_t* config)
 
     ESP_LOGD(TAG, "Doing SW reset of sensor");
     s_sensor.reset(&s_sensor);
-
-    s_sensor.set_pixformat(&s_sensor, PIXFORMAT_YUV422);
-
-    framesize_t framesize = FRAMESIZE_QVGA; 
+    jpeg = true;
+    framesize_t framesize = FRAMESIZE_SVGA; 
     s_fb_w = resolution[framesize][0];
     s_fb_h = resolution[framesize][1];
+
+	s_sensor.set_pixformat(&s_sensor, PIXFORMAT_JPEG);
+	
     ESP_LOGD(TAG, "Setting frame size at %dx%d", s_fb_w, s_fb_h);
     if (s_sensor.set_framesize(&s_sensor, framesize) != 0) {
         ESP_LOGE(TAG, "Failed to set frame size");
         return ESP_ERR_CAMERA_FAILED_TO_SET_FRAME_SIZE;
     }
+    
+	s_sensor.set_pixformat(&s_sensor, PIXFORMAT_JPEG);
+    
 
 #if ENABLE_TEST_PATTERN
     /* Test pattern may get handy
@@ -217,7 +225,8 @@ esp_err_t camera_init(const camera_config_t* config)
     ESP_LOGD(TAG, "Test pattern enabled");
 #endif
 
-    s_fb_size = s_fb_w * s_fb_h;
+    s_fb_size = (jpeg)?90*1000:s_fb_w * s_fb_h;
+
     ESP_LOGD(TAG, "Allocating frame buffer (%dx%d, %d bytes)", s_fb_w, s_fb_h,
             s_fb_size);
     s_fb = (uint8_t*) malloc(s_fb_size);
@@ -236,7 +245,7 @@ esp_err_t camera_init(const camera_config_t* config)
 
     s_data_ready = xSemaphoreCreateBinary();
     s_frame_ready = xSemaphoreCreateBinary();
-    xTaskCreatePinnedToCore(&line_filter_task, "line_filter", 2048, NULL, 10,
+    xTaskCreatePinnedToCore(&line_filter_task, "line_filter", 2048, NULL, 4,
             NULL, 0);
 
     // skip at least one frame after changing camera settings
@@ -249,12 +258,48 @@ esp_err_t camera_init(const camera_config_t* config)
     while (gpio_get_level(s_config.pin_vsync) == 0) {
         ;
     }
+    
+    ESP_LOGD(TAG, "Setting GPIO interrupts.");
+    
+    gpio_set_intr_type(s_config.pin_vsync, GPIO_INTR_NEGEDGE);
+    gpio_intr_enable(s_config.pin_vsync);
+    gpio_isr_register(&gpioCallback, (void*)TAG, ESP_INTR_FLAG_INTRDISABLED | ESP_INTR_FLAG_LEVEL1 | ESP_INTR_FLAG_IRAM, &s_vsync_intr_handle);
  
     ESP_LOGD(TAG, "Init done");
     s_initialized = true;
 
     return ESP_OK;
 }
+
+
+void gpioCallback(void* arg)
+{
+  /* Calc */
+    //uint32_t gpio_num = 0;
+    uint32_t gpio_intr_status = READ_PERI_REG(GPIO_STATUS_REG);   //read status to get interrupt status for GPIO0-31
+    uint32_t gpio_intr_status_h = READ_PERI_REG(GPIO_STATUS1_REG);//read status1 to get interrupt status for GPIO32-39
+    SET_PERI_REG_MASK(GPIO_STATUS_W1TC_REG, gpio_intr_status);    //Clear intr for gpio0-gpio31
+    SET_PERI_REG_MASK(GPIO_STATUS1_W1TC_REG, gpio_intr_status_h); //Clear intr for gpio32-39
+
+	if(gpio_get_level(s_config.pin_vsync) == 0)
+	{
+	  //  ESP_LOGD(TAG, "VSYNC LOW");
+		
+		if(s_i2s_running)
+		{
+			ESP_LOGD(TAG, "GPIO - I2S stop.");
+			i2s_stop();
+			BaseType_t xHigherPriorityTaskWoken;
+			xSemaphoreGiveFromISR(s_data_ready, &xHigherPriorityTaskWoken);
+			if (xHigherPriorityTaskWoken != pdFALSE) {
+			    portYIELD_FROM_ISR();
+		    }
+		}
+		
+	}
+
+}
+
 
 uint8_t* camera_get_fb()
 {
@@ -413,7 +458,7 @@ static void i2s_init()
     I2S0.fifo_conf.rx_fifo_mod_force_en = 1;
     I2S0.conf_chan.rx_chan_mod = 1;
     // Grab 16 samples
-    I2S0.sample_rate_conf.rx_bits_mod = 16;
+    I2S0.sample_rate_conf.rx_bits_mod = 32;
     // Clear flags which are used in I2S serial mode
     I2S0.conf.rx_right_first = 0;
     I2S0.conf.rx_msb_right = 0;
@@ -443,9 +488,12 @@ static void i2s_fill_buf(int index)
 static void i2s_stop()
 {
     esp_intr_disable(s_i2s_intr_handle);
+    esp_intr_disable(s_vsync_intr_handle);
     i2s_conf_reset();
     I2S0.conf.rx_start = 0;
     s_i2s_running = false;
+	ESP_LOGD(TAG, "realloc framebuffer to %d.", s_line_count * s_buf_line_width);
+    ESP_LOGD(TAG, "isr_count: %d buf_line_width: %d href_count: %d line_count: %d", s_isr_count, s_buf_line_width, href_counter, s_line_count);
 }
 
 static void i2s_run(size_t line_width, int height)
@@ -453,6 +501,8 @@ static void i2s_run(size_t line_width, int height)
     s_buf_line_width = line_width;
     s_buf_height = height;
 
+	esp_intr_enable(s_vsync_intr_handle);
+	
     // wait for vsync
     ESP_LOGD(TAG, "Waiting for positive edge on VSYNC");
     while (gpio_get_level(s_config.pin_vsync) == 0) {
@@ -462,11 +512,16 @@ static void i2s_run(size_t line_width, int height)
         ;
     }
     ESP_LOGD(TAG, "Got VSYNC");
+    esp_intr_enable(s_vsync_intr_handle);
+    // wait a bit
+    delay(2);
 
+    // start RX
     // start RX
     s_cur_buffer = 0;
     s_line_count = 0;
     s_isr_count = 0;
+	href_counter = 0;
     s_i2s_running = true;
     i2s_fill_buf(s_cur_buffer);
 }
@@ -481,8 +536,10 @@ static void IRAM_ATTR i2s_isr(void* arg)
         i2s_fill_buf(s_cur_buffer);
         ++s_isr_count;
     }
+	ESP_LOGD(TAG, "ISR before.");
     BaseType_t xHigherPriorityTaskWoken;
     xSemaphoreGiveFromISR(s_data_ready, &xHigherPriorityTaskWoken);
+	ESP_LOGD(TAG, "ISR after.");
     if (xHigherPriorityTaskWoken != pdFALSE) {
         portYIELD_FROM_ISR();
     }
@@ -490,33 +547,70 @@ static void IRAM_ATTR i2s_isr(void* arg)
 
 static void line_filter_task(void *pvParameters)
 {
+	
     int prev_buf = -1;
     while (true) {
         xSemaphoreTake(s_data_ready, portMAX_DELAY);
+		ESP_LOGD(TAG, "start linefilter");
         int buf_idx = !s_cur_buffer;
         if (prev_buf != -1 && prev_buf == buf_idx) {
             ets_printf("! %d\n", s_line_count);
         }
-        uint8_t* pfb = s_fb + s_line_count * s_buf_line_width;
-        // Get pointer to the current DMA buffer
-        const uint32_t* buf = s_dma_buf[buf_idx];
-        for (int i = 0; i < s_buf_line_width; ++i) {
-            // Get 32 bit from DMA buffer
-            // 1 Pixel = (2Byte i2s overhead + 2Byte pixeldata)
-            uint32_t v = *buf;
-            // Extract third byte (only the luminance information from the pixel)
-            uint8_t comp = (v & 0xff0000) >> 16;
-            // Write byte to target buffer
-            *pfb = comp;
-            // Set source pointer 32 bit forward
-            ++buf;
-            // Set target pointer 8 bit forward
-            ++pfb;
+        if(jpeg)
+        {
+			//ESP_LOGD(TAG, "jpeg linefilter");
+			ets_printf("Filtering %d\n", s_line_count);
+            uint8_t* pfb = s_fb + s_line_count * 2 * s_buf_line_width;
+            // Get pointer to the current DMA buffer
+            const uint32_t* buf = s_dma_buf[buf_idx];
+            for (int i = 0; i < s_buf_line_width; ++i) {
+                // Get 32 bit from DMA buffer
+                // 1 Pixel = (2Byte i2s overhead + 2Byte pixeldata)
+                uint32_t v = *buf;
+				// Extract third byte
+				uint8_t comp = (v & 0xff0000) >> 16;
+				// Write byte to target buffer
+				*pfb = comp;
+				// Set target pointer 8 bit forward
+				++pfb;
+				// Extract first byte
+				uint8_t comp2 = (v & 0xff);
+				// Write byte to target buffer
+				*pfb = comp2;
+				// Set target pointer 8 bit forward
+				++pfb;
+				// Set source pointer 32 bit forward
+				++buf;
+            }
+			//ESP_LOGD(TAG, "end jpeg");
         }
+        else
+        {
+            uint8_t* pfb = s_fb + s_line_count * s_buf_line_width;
+            // Get pointer to the current DMA buffer
+            const uint32_t* buf = s_dma_buf[buf_idx];
+            for (int i = 0; i < s_buf_line_width; ++i) {
+                // Get 32 bit from DMA buffer
+                // 1 Pixel = (2Byte i2s overhead + 2Byte pixeldata)
+                uint32_t v = *buf;
+
+                    // Extract third byte (only the luminance information from the pixel)
+                    uint8_t comp = (v & 0xff0000) >> 16;
+                    // Write byte to target buffer
+                    *pfb = comp;
+                    // Set source pointer 32 bit forward
+                    ++buf;
+                    // Set target pointer 8 bit forward
+                    ++pfb;   
+            }
+        }
+		
         ++s_line_count;
         prev_buf = buf_idx;
+		ESP_LOGD(TAG, "end linefilter");
         if (!s_i2s_running) {
             prev_buf = -1;
+            ESP_LOGD(TAG, "Giving frame semaphore.");
             xSemaphoreGive(s_frame_ready);
         }
     }
