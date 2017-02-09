@@ -21,6 +21,20 @@
 extern "C" {
 #endif
 
+typedef enum {
+    CAMERA_PF_RGB565 = 0,       //!< RGB, 2 bytes per pixel
+    CAMERA_PF_YUV422 = 1,       //!< YUYV, 2 bytes per pixel
+    CAMERA_PF_GRAYSCALE = 2,    //!< 1 byte per pixel
+    CAMERA_PF_JPEG = 3,         //!< JPEG compressed
+} camera_pixelformat_t;
+
+typedef enum {
+    CAMERA_FS_QQVGA = 4,     //!< 160x120
+    CAMERA_FS_QVGA = 8,      //!< 320x240
+    CAMERA_FS_VGA = 10,      //!< 640x480
+    CAMERA_FS_SVGA = 11,     //!< 800x600
+} camera_framesize_t;
+
 typedef struct {
     int pin_reset;          /*!< GPIO pin for camera reset line */
     int pin_xclk;           /*!< GPIO pin for camera XCLK line */
@@ -42,6 +56,11 @@ typedef struct {
 
     ledc_timer_t ledc_timer;        /*!< LEDC timer to be used for generating XCLK  */
     ledc_channel_t ledc_channel;    /*!< LEDC channel to be used for generating XCLK  */
+
+    camera_pixelformat_t pixel_format;
+    camera_framesize_t frame_size;
+
+    int jpeg_quality;
 } camera_config_t;
 
 #define ESP_ERR_CAMERA_BASE 0x20000
@@ -77,6 +96,8 @@ esp_err_t camera_init(const camera_config_t* config);
  * @return pointer to framebuffer
  */
 uint8_t* camera_get_fb();
+
+size_t camera_get_data_size();
 
 /**
  * @brief Get the width of framebuffer, in pixels.
