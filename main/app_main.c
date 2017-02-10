@@ -91,8 +91,8 @@ static void initialise_wifi(void)
     ESP_ERROR_CHECK( esp_wifi_set_storage(WIFI_STORAGE_RAM) );
     wifi_config_t wifi_config = {
         .sta = {
-            .ssid = "WiFi-Name",
-            .password = "WiFi-Password",
+            .ssid = CONFIG_WIFI_SSID,
+            .password = CONFIG_WIFI_PASSWORD,
         },
     };
     ESP_ERROR_CHECK( esp_wifi_set_mode(WIFI_MODE_STA) );
