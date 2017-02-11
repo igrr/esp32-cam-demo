@@ -45,11 +45,12 @@
 static const char* TAG = "camera_demo";
 
 int state = 0;
-const static char http_html_hdr[] =
-        "HTTP/1.1 200 OK\r\nContent-type: multipart/x-mixed-replace; boundary=123456789000000000000987654321\r\n\r\n";
-
-const static char http_section_begin[] = "Content-type: image/jpg\r\n\r\n";
-const static char http_section_end[] = "--123456789000000000000987654321\r\n";
+const static char http_hdr[] = "HTTP/1.1 200 OK\r\n";
+const static char http_stream_hdr[] = 
+        "Content-type: multipart/x-mixed-replace; boundary=123456789000000000000987654321\r\n\r\n";
+const static char http_jpg_hdr[] =
+        "Content-type: image/jpg\r\n\r\n";
+const static char http_jpg_boundary[] = "--123456789000000000000987654321\r\n";
 
 static EventGroupHandle_t wifi_event_group;
 const int CONNECTED_BIT = BIT0;
@@ -116,45 +117,55 @@ static void http_server_netconn_serve(struct netconn *conn)
          there are other formats for GET, and we're keeping it very simple )*/
         if (buflen >= 5 && buf[0] == 'G' && buf[1] == 'E' && buf[2] == 'T'
                 && buf[3] == ' ' && buf[4] == '/') {
-            /* Send the HTML header
+          /* Send the HTTP header
              * subtract 1 from the size, since we dont send the \0 in the string
              * NETCONN_NOCOPY: our data is const static, so no need to copy it
              */
-            netconn_write(conn, http_html_hdr, sizeof(http_html_hdr) - 1,
+            netconn_write(conn, http_hdr, sizeof(http_hdr) - 1,
                     NETCONN_NOCOPY);
-
-            /* Send our HTML page */
-            //netconn_write(conn, http_index_hml, sizeof(http_index_hml)-1, NETCONN_NOCOPY);
-            int n = 10000;
-            while (n--) {
-                if (buf[5] == 's') {
-                    err = netconn_write(conn, http_section_begin,
-                            sizeof(http_section_begin) - 1, NETCONN_NOCOPY);
-                    if (err != ERR_OK) {
-                        break;
+            //check if a stream is requested.
+            if (buf[5] == 's') {
+                //Send mjpeg stream header
+                err = netconn_write(conn, http_stream_hdr, sizeof(http_stream_hdr) - 1,
+                    NETCONN_NOCOPY);
+                ESP_LOGD(TAG, "Stream started.");
+                
+                //Run while everyhting is ok and connection open.
+                while(err == ERR_OK) {
+                    ESP_LOGD(TAG, "Capture frame");
+                    err = camera_run();
+                    if (err != ESP_OK) {
+                        ESP_LOGD(TAG, "Camera capture failed with error = %d", err);
+                    } else {
+                        ESP_LOGD(TAG, "Done");
+                        //Send jpeg header
+                        err = netconn_write(conn, http_jpg_hdr, sizeof(http_jpg_hdr) - 1,
+                            NETCONN_NOCOPY);
+                        //Send frame
+                        err = netconn_write(conn, camera_get_fb(), camera_get_data_size(),
+                            NETCONN_NOCOPY);
+                        if(err == ERR_OK)
+                        {
+                            //Send boundary to next jpeg
+                            err = netconn_write(conn, http_jpg_boundary, 
+                                    sizeof(http_jpg_boundary) -1, NETCONN_NOCOPY);
+                        }
                     }
                 }
+                ESP_LOGD(TAG, "Stream ended.");
+            } else {
+                //Send jpeg header
+                err = netconn_write(conn, http_jpg_hdr, sizeof(http_jpg_hdr) - 1,
+                    NETCONN_NOCOPY);
+                ESP_LOGD(TAG, "Image requested.");
                 err = camera_run();
                 if (err != ESP_OK) {
                     ESP_LOGD(TAG, "Camera capture failed with error = %d", err);
-                    break;
                 } else {
                     ESP_LOGD(TAG, "Done");
+                    //Send jpeg
                     err = netconn_write(conn, camera_get_fb(), camera_get_data_size(),
-                            NETCONN_NOCOPY);
-                    if (err != ERR_OK) {
-                        break;
-                    }
-                    if (buf[5] == 's') {
-                        err = netconn_write(conn, http_section_end,
-                                sizeof(http_section_end) - 1, NETCONN_NOCOPY);
-                        if (err != ERR_OK) {
-                            break;
-                        }
-                    }
-                    else {
-                        break;
-                    }
+                        NETCONN_NOCOPY);
                 }
             }
         }
