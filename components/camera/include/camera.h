@@ -22,8 +22,8 @@ extern "C" {
 #endif
 
 typedef enum {
-    CAMERA_PF_RGB565 = 0,       //!< RGB, 2 bytes per pixel
-    CAMERA_PF_YUV422 = 1,       //!< YUYV, 2 bytes per pixel
+    CAMERA_PF_RGB565 = 0,       //!< RGB, 2 bytes per pixel (not implemented)
+    CAMERA_PF_YUV422 = 1,       //!< YUYV, 2 bytes per pixel (not implemented)
     CAMERA_PF_GRAYSCALE = 2,    //!< 1 byte per pixel
     CAMERA_PF_JPEG = 3,         //!< JPEG compressed
 } camera_pixelformat_t;
@@ -34,6 +34,13 @@ typedef enum {
     CAMERA_FS_VGA = 10,      //!< 640x480
     CAMERA_FS_SVGA = 11,     //!< 800x600
 } camera_framesize_t;
+
+typedef enum {
+    CAMERA_NONE = 0,
+    CAMERA_UNKNOWN = 1,
+    CAMERA_OV7725 = 7725,
+    CAMERA_OV2640 = 2640,
+} camera_model_t;
 
 typedef struct {
     int pin_reset;          /*!< GPIO pin for camera reset line */
@@ -69,15 +76,24 @@ typedef struct {
 #define ESP_ERR_CAMERA_NOT_SUPPORTED            (ESP_ERR_CAMERA_BASE + 3)
 
 /**
+ * @brief Probe the camera
+ * This function enables LEDC peripheral to generate XCLK signal,
+ * detects the camera I2C address and detects camera model.
+ *
+ * @param config camera configuration parameters
+ * @param[out] out_camera_model output, detected camera model
+ * @return ESP_OK if camera was detected
+ */
+esp_err_t camera_probe(const camera_config_t* config, camera_model_t* out_camera_model);
+
+/**
  * @brief Initialize the camera
  *
- * This function enables LEDC peripheral to generate XCLK signal,
- * detects and configures camera over I2C interface,
+ * @note call camera_probe before calling this function
+ *
+ * This function configures camera over I2C interface,
  * allocates framebuffer and DMA buffers,
  * initializes parallel I2S input, and sets up DMA descriptors.
- *
- * Currently camera is initialized in QVGA mode, and data is
- * converted into grayscale.
  *
  * Currently this function can only be called once and there is
  * no way to de-initialize this module.
@@ -87,16 +103,20 @@ typedef struct {
  */
 esp_err_t camera_init(const camera_config_t* config);
 
-
 /**
  * @brief Obtain the pointer to framebuffer allocated by camera_init function.
- *
- * Currently framebuffer is grayscale, 8 bits per pixel.
  *
  * @return pointer to framebuffer
  */
 uint8_t* camera_get_fb();
 
+/**
+ * @brief Return the size of valid data in the framebuffer
+ *
+ * For grayscale mode, this function returns width * height of the framebuffer.
+ * For JPEG mode, this function returns the actual size of encoded JPEG image.
+ * @return size of valid data in framebuffer, in bytes
+ */
 size_t camera_get_data_size();
 
 /**

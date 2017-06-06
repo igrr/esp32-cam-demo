@@ -50,11 +50,14 @@ const static char http_stream_hdr[] =
         "Content-type: multipart/x-mixed-replace; boundary=123456789000000000000987654321\r\n\r\n";
 const static char http_jpg_hdr[] =
         "Content-type: image/jpg\r\n\r\n";
-const static char http_jpg_boundary[] = "--123456789000000000000987654321\r\n";
+const static char http_pgm_hdr[] =
+        "Content-type: image/x-portable-graymap\r\n\r\n";
+const static char http_stream_boundary[] = "--123456789000000000000987654321\r\n";
 
 static EventGroupHandle_t wifi_event_group;
 const int CONNECTED_BIT = BIT0;
 static ip4_addr_t s_ip_addr;
+static camera_pixelformat_t s_pixel_format;
 
 static esp_err_t event_handler(void *ctx, system_event_t *event)
 {
@@ -96,7 +99,9 @@ static void initialise_wifi(void)
     ESP_ERROR_CHECK( esp_wifi_set_config(WIFI_IF_STA, &wifi_config) );
     ESP_ERROR_CHECK( esp_wifi_start() );
     ESP_ERROR_CHECK( esp_wifi_set_ps(WIFI_PS_NONE) );
+    ESP_LOGI(TAG, "Connecting to \"%s\"", wifi_config.sta.ssid);
     xEventGroupWaitBits(wifi_event_group, CONNECTED_BIT, false, true, portMAX_DELAY);
+    ESP_LOGI(TAG, "Connected");
 
 }
 static void http_server_netconn_serve(struct netconn *conn)
@@ -147,16 +152,24 @@ static void http_server_netconn_serve(struct netconn *conn)
                         if(err == ERR_OK)
                         {
                             //Send boundary to next jpeg
-                            err = netconn_write(conn, http_jpg_boundary, 
-                                    sizeof(http_jpg_boundary) -1, NETCONN_NOCOPY);
+                            err = netconn_write(conn, http_stream_boundary,
+                                    sizeof(http_stream_boundary) -1, NETCONN_NOCOPY);
                         }
                     }
                 }
                 ESP_LOGD(TAG, "Stream ended.");
             } else {
-                //Send jpeg header
-                err = netconn_write(conn, http_jpg_hdr, sizeof(http_jpg_hdr) - 1,
-                    NETCONN_NOCOPY);
+                if (s_pixel_format == CAMERA_PF_JPEG) {
+                    netconn_write(conn, http_jpg_hdr, sizeof(http_jpg_hdr) - 1, NETCONN_NOCOPY);
+                } else if (s_pixel_format == CAMERA_PF_GRAYSCALE) {
+                    netconn_write(conn, http_pgm_hdr, sizeof(http_pgm_hdr) - 1, NETCONN_NOCOPY);
+                    if (memcmp(&buf[5], "pgm", 3) == 0) {
+                        char pgm_header[32];
+                        snprintf(pgm_header, sizeof(pgm_header), "P5 %d %d %d\n", camera_get_fb_width(), camera_get_fb_height(), 255);
+                        netconn_write(conn, pgm_header, strlen(pgm_header), NETCONN_COPY);
+                    }
+                }
+
                 ESP_LOGD(TAG, "Image requested.");
                 err = camera_run();
                 if (err != ESP_OK) {
@@ -198,6 +211,9 @@ static void http_server(void *pvParameters)
 
 void app_main()
 {
+    esp_log_level_set("wifi", ESP_LOG_WARN);
+    esp_log_level_set("gpio", ESP_LOG_WARN);
+
     nvs_flash_init();
     camera_config_t config = {
         .ledc_channel = LEDC_CHANNEL_0,
@@ -217,22 +233,44 @@ void app_main()
         .pin_sscb_sda = 26,
         .pin_sscb_scl = 27,
         .pin_reset = 2,
-        .xclk_freq_hz = 20000000,
-        .pixel_format = CAMERA_PF_JPEG,
-        .frame_size = CAMERA_FS_VGA,
-        .jpeg_quality = 15
+        .xclk_freq_hz = 10000000,
     };
 
-    esp_err_t err = camera_init(&config);
+    camera_model_t camera_model;
+    esp_err_t err = camera_probe(&config, &camera_model);
     if (err != ESP_OK) {
-        ESP_LOGE(TAG, "Camera init failed with error = %d", err);
+        ESP_LOGE(TAG, "Camera probe failed with error 0x%x", err);
+        return;
+    }
+    if (camera_model == CAMERA_OV7725) {
+        ESP_LOGI(TAG, "Detected OV7725 camera, using grayscale bitmap format");
+        s_pixel_format = CAMERA_PF_GRAYSCALE;
+        config.frame_size = CAMERA_FS_QVGA;
+    } else if (camera_model == CAMERA_OV2640) {
+        ESP_LOGI(TAG, "Detected OV2640 camera, using JPEG format");
+        s_pixel_format = CAMERA_PF_JPEG;
+        config.frame_size = CAMERA_FS_VGA;
+        config.jpeg_quality = 15;
+    } else {
+        ESP_LOGE(TAG, "Camera not supported");
+        return;
+    }
+    config.pixel_format = s_pixel_format;
+    err = camera_init(&config);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Camera init failed with error 0x%x", err);
         return;
     }
     initialise_wifi();
-    ESP_LOGI(TAG, "Free heap: %u\n", xPortGetFreeHeapSize());
+    ESP_LOGI(TAG, "Free heap: %u", xPortGetFreeHeapSize());
     ESP_LOGI(TAG, "Camera demo ready");
     ESP_LOGI(TAG, "open http://" IPSTR "/get for single frame", IP2STR(&s_ip_addr));
-    ESP_LOGI(TAG, "open http://" IPSTR "/stream for multipart/x-mixed-replace stream (use with JPEGs)", IP2STR(&s_ip_addr));
+    if (s_pixel_format == CAMERA_PF_GRAYSCALE) {
+        ESP_LOGI(TAG, "open http://" IPSTR "/pgm for a single image/x-portable-graymap image", IP2STR(&s_ip_addr));
+    }
+    if (s_pixel_format == CAMERA_PF_JPEG) {
+        ESP_LOGI(TAG, "open http://" IPSTR "/stream for multipart/x-mixed-replace stream (use with JPEGs)", IP2STR(&s_ip_addr));
+    }
     xTaskCreate(&http_server, "http_server", 2048, NULL, 5, NULL);
 }
 

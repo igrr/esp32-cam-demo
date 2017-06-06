@@ -113,9 +113,19 @@ static size_t i2s_bytes_per_sample(i2s_sampling_mode_t mode)
     }
 }
 
-static esp_err_t camera_probe()
+esp_err_t camera_probe(const camera_config_t* config, camera_model_t* out_camera_model)
 {
-    camera_config_t* config = &s_state->config;
+    if (s_state != NULL) {
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    s_state = (camera_state_t*) calloc(sizeof(*s_state), 1);
+    if (!s_state) {
+        return ESP_ERR_NO_MEM;
+    }
+
+    ESP_LOGD(TAG, "Enabling XCLK output");
+    camera_enable_out_clock(config);
 
     ESP_LOGD(TAG, "Initializing SSCB");
     SCCB_Init(config->pin_sscb_sda, config->pin_sscb_scl);
@@ -136,6 +146,7 @@ static esp_err_t camera_probe()
     delay(10);
     uint8_t slv_addr = SCCB_Probe();
     if (slv_addr == 0) {
+        *out_camera_model = CAMERA_NONE;
         return ESP_ERR_CAMERA_NOT_DETECTED;
     }
     s_state->sensor.slv_addr = slv_addr;
@@ -152,15 +163,19 @@ static esp_err_t camera_probe()
     switch (id->PID) {
 #if CONFIG_OV2640_SUPPORT
         case OV2640_PID:
+            *out_camera_model = CAMERA_OV2640;
             ov2640_init(&s_state->sensor);
             break;
 #endif
 #if CONFIG_OV7725_SUPPORT
         case OV7725_PID:
+            *out_camera_model = CAMERA_OV7725;
             ov7725_init(&s_state->sensor);
             break;
 #endif
         default:
+            id->PID = 0;
+            *out_camera_model = CAMERA_UNKNOWN;
             ESP_LOGD(TAG, "Detected camera not supported.");
             return ESP_ERR_CAMERA_NOT_SUPPORTED;
     }
@@ -173,27 +188,14 @@ static esp_err_t camera_probe()
 
 esp_err_t camera_init(const camera_config_t* config)
 {
-    if (s_state != NULL) {
+    if (!s_state) {
         return ESP_ERR_INVALID_STATE;
     }
-    esp_err_t err = ESP_OK;
-
-    s_state = (camera_state_t*) malloc(sizeof(*s_state));
-    if (s_state == NULL) {
-        err = ESP_ERR_NO_MEM;
-        goto fail;
+    if (s_state->sensor.id.PID == 0) {
+        return ESP_ERR_CAMERA_NOT_SUPPORTED;
     }
     memcpy(&s_state->config, config, sizeof(*config));
-
-    ESP_LOGD(TAG, "Enabling XCLK output");
-    camera_enable_out_clock(config);
-
-    err = camera_probe();
-    if (err != ESP_OK) {
-        ESP_LOGE(TAG, "Camera probe failed");
-        goto fail;
-    }
-
+    esp_err_t err = ESP_OK;
     framesize_t frame_size = (framesize_t) config->frame_size;
     pixformat_t pix_format = (pixformat_t) config->pixel_format;
     s_state->width = resolution[frame_size][0];
@@ -326,21 +328,17 @@ esp_err_t camera_init(const camera_config_t* config)
     return ESP_OK;
 
 fail:
-    if (s_state) {
-        free(s_state->fb);
-        if (s_state->data_ready) {
-            vQueueDelete(s_state->data_ready);
-        }
-        if (s_state->frame_ready) {
-            vSemaphoreDelete(s_state->frame_ready);
-        }
-        if (s_state->dma_filter_task) {
-            vTaskDelete(s_state->dma_filter_task);
-        }
+    free(s_state->fb);
+    if (s_state->data_ready) {
+        vQueueDelete(s_state->data_ready);
+    }
+    if (s_state->frame_ready) {
+        vSemaphoreDelete(s_state->frame_ready);
+    }
+    if (s_state->dma_filter_task) {
+        vTaskDelete(s_state->dma_filter_task);
     }
     dma_desc_deinit();
-    free(s_state);
-    s_state = NULL;
     return err;
 }
 
