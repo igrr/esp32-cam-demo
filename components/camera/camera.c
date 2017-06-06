@@ -226,7 +226,8 @@ esp_err_t camera_init(const camera_config_t* config)
         s_state->fb_size = s_state->width * s_state->height;
         s_state->dma_filter = &dma_filter_grayscale;
         s_state->sampling_mode = SM_0A0B_0C0D;
-        s_state->bytes_per_pixel = 2;       // camera sends YUYV
+        s_state->in_bytes_per_pixel = 2;       // camera sends YUYV
+        s_state->fb_bytes_per_pixel = 1;       // frame buffer stores Y8
     } else if (pix_format == PIXFORMAT_JPEG) {
         if (s_state->sensor.id.PID != OV2640_PID) {
             ESP_LOGE(TAG, "JPEG format is only supported for ov2640");
@@ -251,15 +252,17 @@ esp_err_t camera_init(const camera_config_t* config)
         } else {
             s_state->sampling_mode = SM_0A00_0B00;
         }
-        s_state->bytes_per_pixel = 2;
+        s_state->in_bytes_per_pixel = 2;
+        s_state->fb_bytes_per_pixel = 2;
     } else {
         ESP_LOGE(TAG, "Requested format is not supported");
         err = ESP_ERR_NOT_SUPPORTED;
         goto fail;
     }
 
-    ESP_LOGD(TAG, "bpp: %d, fb_size: %d, mode: %d, width: %d height: %d",
-            s_state->bytes_per_pixel, s_state->fb_size, s_state->sampling_mode,
+    ESP_LOGD(TAG, "in_bpp: %d, fb_bpp: %d, fb_size: %d, mode: %d, width: %d height: %d",
+            s_state->in_bytes_per_pixel, s_state->fb_bytes_per_pixel,
+            s_state->fb_size, s_state->sampling_mode,
             s_state->width, s_state->height);
 
     ESP_LOGD(TAG, "Allocating frame buffer (%d bytes)", s_state->fb_size);
@@ -391,7 +394,7 @@ esp_err_t camera_run()
 static esp_err_t dma_desc_init()
 {
     assert(s_state->width % 4 == 0);
-    size_t line_size = s_state->width * s_state->bytes_per_pixel *
+    size_t line_size = s_state->width * s_state->in_bytes_per_pixel *
             i2s_bytes_per_sample(s_state->sampling_mode);
     ESP_LOGD(TAG, "Line width (for DMA): %d bytes", line_size);
     size_t dma_per_line = 1;
@@ -653,7 +656,7 @@ static void IRAM_ATTR gpio_isr(void* arg)
 static size_t get_fb_pos()
 {
     return s_state->dma_filtered_count * s_state->width *
-            s_state->bytes_per_pixel / s_state->dma_per_line;
+            s_state->fb_bytes_per_pixel / s_state->dma_per_line;
 }
 
 static void IRAM_ATTR dma_filter_task(void *pvParameters)
@@ -679,23 +682,22 @@ static void IRAM_ATTR dma_filter_task(void *pvParameters)
 
 static void IRAM_ATTR dma_filter_grayscale(const dma_elem_t* src, lldesc_t* dma_desc, uint8_t* dst)
 {
-//    uint8_t* pfb = s_fb + s_line_count * s_buf_line_width / 2;
-//    // Get pointer to the current DMA buffer
-//    const uint32_t* buf = s_dma_buf[buf_idx];
-//    for (int i = 0; i < s_buf_line_width / 8; ++i) {
-//        pfb[0] = (buf[0] & 0xff0000) >> 16;
-//        pfb[1] = (buf[2] & 0xff0000) >> 16;
-//        pfb[2] = (buf[4] & 0xff0000) >> 16;
-//        pfb[3] = (buf[6] & 0xff0000) >> 16;
-//        buf += 8;
-//        pfb += 4;
-//    }
+    size_t end = dma_desc->length / sizeof(dma_elem_t) / 4;
+    for (size_t i = 0; i < end; ++i) {
+        // manually unrolling 4 iterations of the loop here
+        dst[0] = src[0].sample1;
+        dst[1] = src[1].sample1;
+        dst[2] = src[2].sample1;
+        dst[3] = src[3].sample1;
+        src += 4;
+        dst += 4;
+    }
 }
 
 static void IRAM_ATTR dma_filter_jpeg(const dma_elem_t* src, lldesc_t* dma_desc, uint8_t* dst)
 {
     size_t end = dma_desc->length / sizeof(dma_elem_t) / 4;
-    // manual unrolling 4 iterations of the loop here
+    // manually unrolling 4 iterations of the loop here
     for (size_t i = 0; i < end; ++i) {
         dst[0] = src[0].sample1;
         dst[1] = src[1].sample1;
@@ -704,7 +706,7 @@ static void IRAM_ATTR dma_filter_jpeg(const dma_elem_t* src, lldesc_t* dma_desc,
         src += 4;
         dst += 4;
     }
-    // for
+    // the final sample of a line in SM_0A0B_0B0C sampling mode needs special handling
     if ((dma_desc->length & 0x7) != 0) {
         dst[0] = src[0].sample1;
         dst[1] = src[1].sample1;

@@ -47,7 +47,8 @@ typedef struct {
     size_t data_size;
     size_t width;
     size_t height;
-    size_t bytes_per_pixel;
+    size_t in_bytes_per_pixel;
+    size_t fb_bytes_per_pixel;
     size_t stride;
     size_t frame_count;
 
