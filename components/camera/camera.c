@@ -633,7 +633,7 @@ static void IRAM_ATTR i2s_isr(void* arg)
     I2S0.int_clr.val = I2S0.int_raw.val;
     bool need_yield;
     signal_dma_buf_received(&need_yield);
-    ESP_EARLY_LOGD(TAG, "isr, cnt=%d", s_state->dma_received_count);
+    ESP_EARLY_LOGV(TAG, "isr, cnt=%d", s_state->dma_received_count);
     if (s_state->dma_received_count == s_state->height * s_state->dma_per_line) {
         i2s_stop();
     }
@@ -647,7 +647,7 @@ static void IRAM_ATTR gpio_isr(void* arg)
     GPIO.status1_w1tc.val = GPIO.status1.val;
     GPIO.status_w1tc = GPIO.status;
     bool need_yield = false;
-    ESP_EARLY_LOGD(TAG, "gpio isr, cnt=%d", s_state->dma_received_count);
+    ESP_EARLY_LOGV(TAG, "gpio isr, cnt=%d", s_state->dma_received_count);
     if (gpio_get_level(s_state->config.pin_vsync) == 0 &&
             s_state->dma_received_count > 0 &&
             !s_state->dma_done) {
