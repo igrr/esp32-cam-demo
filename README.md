@@ -60,7 +60,7 @@ Specific pins used in this example to connect ESP32 and camera are shown in tabl
 
 | Interface | Camera Pin | Pin Mapping for ESP32 DevKitJ | Alternate ESP32 Pin Mapping |
 | :--- | :---: | :---: | :---: |
-| SCCB Clock | SIDC | IO27 | IO23 |
+| SCCB Clock | SIOC | IO27 | IO23 |
 | SCCB Data | SIOD | IO26 | IO25 |
 | System Clock | XCLK | IO21 | IO27 |
 | Vertical Sync | VSYNC | IO25 | IO22 |
