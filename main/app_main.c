@@ -41,6 +41,7 @@
 #include "lwip/sys.h"
 #include "lwip/netdb.h"
 #include "lwip/api.h"
+#include "bitmap.h"
 
 static const char* TAG = "camera_demo";
 
@@ -53,11 +54,16 @@ const static char http_jpg_hdr[] =
 const static char http_pgm_hdr[] =
         "Content-type: image/x-portable-graymap\r\n\r\n";
 const static char http_stream_boundary[] = "--123456789000000000000987654321\r\n";
+const static char http_bitmap_hdr[] =
+        "Content-type: image/bitmap\r\n\r\n";
 
 static EventGroupHandle_t wifi_event_group;
 const int CONNECTED_BIT = BIT0;
 static ip4_addr_t s_ip_addr;
 static camera_pixelformat_t s_pixel_format;
+
+#define CAMERA_PIXEL_FORMAT CAMERA_PF_RGB565
+#define CAMERA_FRAME_SIZE CAMERA_FS_QQVGA
 
 static esp_err_t event_handler(void *ctx, system_event_t *event)
 {
@@ -129,7 +135,7 @@ static void http_server_netconn_serve(struct netconn *conn)
             netconn_write(conn, http_hdr, sizeof(http_hdr) - 1,
                     NETCONN_NOCOPY);
             //check if a stream is requested.
-            if (buf[5] == 's') {
+            if (buf[5] == 's' || buf[5] == 'b') {
                 //Send mjpeg stream header
                 err = netconn_write(conn, http_stream_hdr, sizeof(http_stream_hdr) - 1,
                     NETCONN_NOCOPY);
@@ -144,8 +150,16 @@ static void http_server_netconn_serve(struct netconn *conn)
                     } else {
                         ESP_LOGD(TAG, "Done");
                         //Send jpeg header
-                        err = netconn_write(conn, http_jpg_hdr, sizeof(http_jpg_hdr) - 1,
-                            NETCONN_NOCOPY);
+                        if(s_pixel_format == CAMERA_PF_RGB565) {
+                            err = netconn_write(conn, http_bitmap_hdr, sizeof(http_bitmap_hdr) - 1,
+                                NETCONN_NOCOPY);
+                            char *bmp = bmp_create_header(camera_get_fb_width(), camera_get_fb_height());
+                            err = netconn_write(conn, bmp, sizeof(bitmap), NETCONN_NOCOPY);
+                            free(bmp);
+                        }
+                        else
+                            err = netconn_write(conn, http_jpg_hdr, sizeof(http_jpg_hdr) - 1,
+                                NETCONN_NOCOPY);
                         //Send frame
                         err = netconn_write(conn, camera_get_fb(), camera_get_data_size(),
                             NETCONN_NOCOPY);
@@ -244,8 +258,8 @@ void app_main()
     }
     if (camera_model == CAMERA_OV7725) {
         ESP_LOGI(TAG, "Detected OV7725 camera, using grayscale bitmap format");
-        s_pixel_format = CAMERA_PF_GRAYSCALE;
-        config.frame_size = CAMERA_FS_QVGA;
+        s_pixel_format = CAMERA_PIXEL_FORMAT;
+        config.frame_size = CAMERA_FRAME_SIZE;
     } else if (camera_model == CAMERA_OV2640) {
         ESP_LOGI(TAG, "Detected OV2640 camera, using JPEG format");
         s_pixel_format = CAMERA_PF_JPEG;
@@ -267,6 +281,9 @@ void app_main()
     ESP_LOGI(TAG, "open http://" IPSTR "/get for single frame", IP2STR(&s_ip_addr));
     if (s_pixel_format == CAMERA_PF_GRAYSCALE) {
         ESP_LOGI(TAG, "open http://" IPSTR "/pgm for a single image/x-portable-graymap image", IP2STR(&s_ip_addr));
+    }
+    if (s_pixel_format == CAMERA_PF_RGB565) {
+        ESP_LOGI(TAG, "open http://" IPSTR "/bitmap for multipart/x-mixed-replace stream (use with BITMAPs)", IP2STR(&s_ip_addr));
     }
     if (s_pixel_format == CAMERA_PF_JPEG) {
         ESP_LOGI(TAG, "open http://" IPSTR "/stream for multipart/x-mixed-replace stream (use with JPEGs)", IP2STR(&s_ip_addr));

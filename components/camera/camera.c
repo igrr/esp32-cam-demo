@@ -91,6 +91,7 @@ static void dma_filter_task(void *pvParameters);
 static void dma_filter_grayscale(const dma_elem_t* src, lldesc_t* dma_desc, uint8_t* dst);
 static void dma_filter_grayscale_highspeed(const dma_elem_t* src, lldesc_t* dma_desc, uint8_t* dst);
 static void dma_filter_jpeg(const dma_elem_t* src, lldesc_t* dma_desc, uint8_t* dst);
+static void dma_filter_bitmap(const dma_elem_t* src, lldesc_t* dma_desc, uint8_t* dst);
 static void i2s_stop();
 
 static bool is_hs_mode()
@@ -236,6 +237,21 @@ esp_err_t camera_init(const camera_config_t* config)
         }
         s_state->in_bytes_per_pixel = 2;       // camera sends YUYV
         s_state->fb_bytes_per_pixel = 1;       // frame buffer stores Y8
+    } else if (pix_format == PIXFORMAT_RGB565) {
+        if (s_state->sensor.id.PID != OV7725_PID) {
+            ESP_LOGE(TAG, "Grayscale format is only supported for ov7225");
+            err = ESP_ERR_NOT_SUPPORTED;
+            goto fail;
+        }
+        s_state->fb_size = s_state->width * s_state->height * 3;
+        if (is_hs_mode()) {
+            s_state->sampling_mode = SM_0A0B_0B0C;
+        } else {
+            s_state->sampling_mode = SM_0A0B_0C0D;
+        }
+        s_state->dma_filter = &dma_filter_bitmap;
+        s_state->in_bytes_per_pixel = 2;       // camera sends YUYV
+        s_state->fb_bytes_per_pixel = 3;       // frame buffer stores Y8
     } else if (pix_format == PIXFORMAT_JPEG) {
         if (s_state->sensor.id.PID != OV2640_PID) {
             ESP_LOGE(TAG, "JPEG format is only supported for ov2640");
@@ -741,3 +757,50 @@ static void IRAM_ATTR dma_filter_jpeg(const dma_elem_t* src, lldesc_t* dma_desc,
         dst[3] = src[2].sample2;
     }
 }
+
+static void dma_filter_bitmap(const dma_elem_t* src, lldesc_t* dma_desc, uint8_t* dst)
+{
+    assert(s_state->sampling_mode == SM_0A0B_0B0C);
+
+    uint32_t rgb;
+    size_t end = dma_desc->length / sizeof(dma_elem_t) / 4;
+    for (size_t i = 0; i < end; ++i) {
+        // manually unrolling 4 iterations of the loop here
+        rgb = src[0].sample1;
+        rgb <<= 8;
+        rgb |= src[1].sample1;
+        dst[0] = (rgb & 0b1111100000000000) >> (8);
+        dst[1] = (rgb & 0b0000011111100000) >> (3);
+        dst[2] = (rgb & 0b0000000000011111) << 3;
+
+        rgb = src[2].sample1;
+        rgb <<= 8;
+        rgb |= src[3].sample1;
+
+        dst[4] = (rgb & 0b1111100000000000) >> (8);
+        dst[5] = (rgb & 0b0000011111100000) >> (3);
+        dst[6] = (rgb & 0b0000000000011111) << 3;
+
+        
+        dst += 6;
+        src += 4;
+    }
+    if ((dma_desc->length & 0x7) != 0) {
+        // manually unrolling 4 iterations of the loop here
+        rgb = src[0].sample1;
+        rgb <<= 8;
+        rgb |= src[1].sample1;
+        dst[0] = (rgb & 0b1111100000000000) >> (8);
+        dst[1] = (rgb & 0b0000011111100000) >> (3);
+        dst[2] = (rgb & 0b0000000000011111) << 3;
+
+        rgb = src[2].sample1;
+        rgb <<= 8;
+        rgb |= src[3].sample2;
+
+        dst[4] = (rgb & 0b1111100000000000) >> (8);
+        dst[5] = (rgb & 0b0000011111100000) >> (3);
+        dst[6] = (rgb & 0b0000000000011111) << 3;
+    }
+}
+
