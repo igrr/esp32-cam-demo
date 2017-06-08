@@ -135,7 +135,7 @@ static void http_server_netconn_serve(struct netconn *conn)
             netconn_write(conn, http_hdr, sizeof(http_hdr) - 1,
                     NETCONN_NOCOPY);
             //check if a stream is requested.
-            if (buf[5] == 's' || buf[5] == 'b') {
+            if (buf[5] == 's') {
                 //Send mjpeg stream header
                 err = netconn_write(conn, http_stream_hdr, sizeof(http_stream_hdr) - 1,
                     NETCONN_NOCOPY);
@@ -181,6 +181,13 @@ static void http_server_netconn_serve(struct netconn *conn)
                         char pgm_header[32];
                         snprintf(pgm_header, sizeof(pgm_header), "P5 %d %d %d\n", camera_get_fb_width(), camera_get_fb_height(), 255);
                         netconn_write(conn, pgm_header, strlen(pgm_header), NETCONN_COPY);
+                    }
+                } else if (s_pixel_format == CAMERA_PF_RGB565) {
+                    netconn_write(conn, http_bitmap_hdr, sizeof(http_bitmap_hdr) - 1, NETCONN_NOCOPY);
+                    if (memcmp(&buf[5], "bmp", 3) == 0) {
+                        char *bmp = bmp_create_header(camera_get_fb_width(), camera_get_fb_height());
+                        err = netconn_write(conn, bmp, sizeof(bitmap), NETCONN_COPY);
+                        free(bmp);
                     }
                 }
 
@@ -278,15 +285,17 @@ void app_main()
     initialise_wifi();
     ESP_LOGI(TAG, "Free heap: %u", xPortGetFreeHeapSize());
     ESP_LOGI(TAG, "Camera demo ready");
-    ESP_LOGI(TAG, "open http://" IPSTR "/get for single frame", IP2STR(&s_ip_addr));
     if (s_pixel_format == CAMERA_PF_GRAYSCALE) {
+        ESP_LOGI(TAG, "open http://" IPSTR "/get for a single grayscale bitmap (no headers)", IP2STR(&s_ip_addr));
         ESP_LOGI(TAG, "open http://" IPSTR "/pgm for a single image/x-portable-graymap image", IP2STR(&s_ip_addr));
     }
     if (s_pixel_format == CAMERA_PF_RGB565) {
-        ESP_LOGI(TAG, "open http://" IPSTR "/bitmap for multipart/x-mixed-replace stream (use with BITMAPs)", IP2STR(&s_ip_addr));
+        ESP_LOGI(TAG, "open http://" IPSTR "/bmp for single image/bitmap image", IP2STR(&s_ip_addr));
+        ESP_LOGI(TAG, "open http://" IPSTR "/stream for multipart/x-mixed-replace stream of bitmaps", IP2STR(&s_ip_addr));
     }
     if (s_pixel_format == CAMERA_PF_JPEG) {
-        ESP_LOGI(TAG, "open http://" IPSTR "/stream for multipart/x-mixed-replace stream (use with JPEGs)", IP2STR(&s_ip_addr));
+        ESP_LOGI(TAG, "open http://" IPSTR "/jpg for single image/jpg image", IP2STR(&s_ip_addr));
+        ESP_LOGI(TAG, "open http://" IPSTR "/stream for multipart/x-mixed-replace stream of JPEGs", IP2STR(&s_ip_addr));
     }
     xTaskCreate(&http_server, "http_server", 2048, NULL, 5, NULL);
 }

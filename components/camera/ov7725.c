@@ -143,7 +143,7 @@ static int set_pixformat(sensor_t *sensor, pixformat_t pixformat)
 
     switch (pixformat) {
         case PIXFORMAT_RGB565:
-            reg =  COM7_SET_FMT(reg, COM7_FMT_RGB);
+            reg =  COM7_SET_FMT(reg, COM7_FMT_RGB) | COM7_FMT_RGB565;
             break;
         case PIXFORMAT_YUV422:
         case PIXFORMAT_GRAYSCALE:
