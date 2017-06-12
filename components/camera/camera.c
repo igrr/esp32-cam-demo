@@ -466,8 +466,8 @@ static void dma_desc_deinit()
 
 static inline void i2s_conf_reset()
 {
-    const uint32_t lc_conf_reset_flags = I2S_IN_RST_S | I2S_AHBM_RST_S
-            | I2S_AHBM_FIFO_RST_S;
+    const uint32_t lc_conf_reset_flags = I2S_IN_RST_M | I2S_AHBM_RST_M
+            | I2S_AHBM_FIFO_RST_M;
     I2S0.lc_conf.val |= lc_conf_reset_flags;
     I2S0.lc_conf.val &= ~lc_conf_reset_flags;
 
