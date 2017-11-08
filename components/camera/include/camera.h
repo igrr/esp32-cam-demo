@@ -87,7 +87,7 @@ typedef struct {
 esp_err_t camera_probe(const camera_config_t* config, camera_model_t* out_camera_model);
 
 /**
- * @brief Initialize the camera
+ * @brief Initialize the camera driver
  *
  * @note call camera_probe before calling this function
  *
@@ -102,6 +102,15 @@ esp_err_t camera_probe(const camera_config_t* config, camera_model_t* out_camera
  * @return ESP_OK on success
  */
 esp_err_t camera_init(const camera_config_t* config);
+
+/**
+ * Deinitialize the camera driver
+ *
+ * @return
+ *      - ESP_OK on success
+ *      - ESP_ERR_INVALID_STATE if the driver hasn't been initialized yet
+ */
+esp_err_t camera_deinit();
 
 /**
  * @brief Obtain the pointer to framebuffer allocated by camera_init function.

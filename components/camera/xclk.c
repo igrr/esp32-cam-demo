@@ -36,3 +36,7 @@ esp_err_t camera_enable_out_clock(camera_config_t* config)
     return ESP_OK;
 }
 
+void camera_disable_out_clock()
+{
+    periph_module_disable(PERIPH_LEDC_MODULE);
+}

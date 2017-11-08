@@ -345,18 +345,39 @@ esp_err_t camera_init(const camera_config_t* config)
     return ESP_OK;
 
 fail:
-    free(s_state->fb);
+    camera_deinit();
+    return err;
+}
+
+esp_err_t camera_deinit()
+{
+    if (s_state == NULL) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    if (s_state->dma_filter_task) {
+        vTaskDelete(s_state->dma_filter_task);
+    }
     if (s_state->data_ready) {
         vQueueDelete(s_state->data_ready);
     }
     if (s_state->frame_ready) {
         vSemaphoreDelete(s_state->frame_ready);
     }
-    if (s_state->dma_filter_task) {
-        vTaskDelete(s_state->dma_filter_task);
+    if (s_state->vsync_intr_handle) {
+        esp_intr_disable(s_state->vsync_intr_handle);
+        esp_intr_free(s_state->vsync_intr_handle);
+    }
+    if (s_state->i2s_intr_handle) {
+        esp_intr_disable(s_state->i2s_intr_handle);
+        esp_intr_free(s_state->i2s_intr_handle);
     }
     dma_desc_deinit();
-    return err;
+    free(s_state->fb);
+    free(s_state);
+    s_state = NULL;
+    camera_disable_out_clock();
+    periph_module_disable(PERIPH_I2S0_MODULE);
+    return ESP_OK;
 }
 
 uint8_t* camera_get_fb()
