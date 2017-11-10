@@ -31,7 +31,7 @@ typedef struct __attribute__((packed, aligned(1))) {
 typedef struct {
     fileheader fileheader;
     bitmapinfoheader bitmapinfoheader;
-} bitmap;
+} bitmap_header_t;
 
-char *bmp_create_header(int w, int h);
+bitmap_header_t *bmp_create_header(int w, int h);
 #endif
