@@ -27,6 +27,14 @@ extern "C" {
 /* Pull in the definitions of HTTP methods */
 #include "http_parser.h"
 
+/**
+ * Bit masks for events to be passed to a handler
+ */
+#define HTTP_HANDLE_URI         BIT(0)      /*!< Called when URI is received */
+#define HTTP_HANDLE_HEADERS     BIT(1)      /*!< Called when all headers are received */
+#define HTTP_HANDLE_DATA        BIT(2)      /*!< Called each time a fragment of request body is received */
+#define HTTP_HANDLE_RESPONSE    BIT(3)      /*!< Called at the end of the request to produce the response */
+
 /** Opaque type representing single HTTP connection */
 typedef struct http_context_* http_context_t;
 
@@ -37,8 +45,26 @@ typedef struct http_server_context_* http_server_t;
 typedef void (* http_handler_fn_t)(http_context_t http_ctx, void* ctx);
 
 /**
+ * @brief Configuration of the HTTP server
+ */
+typedef struct {
+    int port;               /*!< TCP Port to listen on */
+    int task_affinity;      /*!< Server task affinity (CPU number of tskNO_AFFINITY */
+    int task_stack_size;    /*!< Server task stack size, in bytes */
+    int task_priority;      /*!< Server task priority */
+} http_server_options_t;
+
+/** Default initializer for http_server_options_t */
+#define HTTP_SERVER_OPTIONS_DEFAULT()  {\
+    .port = 80, \
+    .task_affinity = tskNO_AFFINITY, \
+    .task_stack_size = 4096, \
+    .task_priority = 1, \
+}
+
+/**
  * @brief initialize HTTP server, start listening
- * @param port  port number to listen on
+ * @param options  pointer to http server options, can point to a temporary
  * @param[out] output, handle of the server; pass it to http_server_stop do
  *             delete the server.
  * @return
@@ -46,7 +72,7 @@ typedef void (* http_handler_fn_t)(http_context_t http_ctx, void* ctx);
  *  - ESP_ERR_NO_MEM if out of RAM
  *  - ESP_FAIL if some other error
  */
-esp_err_t http_server_start(int port, http_server_t* out_server);
+esp_err_t http_server_start(const http_server_options_t* options, http_server_t* out_server);
 
 /**
  * @brief Stop the previously started server
@@ -64,10 +90,11 @@ esp_err_t http_server_stop(http_server_t server);
  *
  * @note Currently only matches full URIs, doesn't support regex
  *
- * @note Request body is currently ignored
- *
+ * @param server  Server handle to register the handler for
  * @param uri_pattern URI pattern to match
  * @param method one of HTTP_GET, HTTP_POST, HTTP_PUT, etc
+ * @param events  a bit mask of HTTP_HANDLE_X events for which the handler
+ *                should be called
  * @param callback function to call
  * @param callback_arg application context to pass to the callback
  * @return
@@ -75,7 +102,84 @@ esp_err_t http_server_stop(http_server_t server);
  *  - ESP_ERR_NO_MEM if out of memory
  */
 esp_err_t http_register_handler(http_server_t server, const char* uri_pattern, int method,
-                                http_handler_fn_t callback, void* callback_arg);
+                                int events, http_handler_fn_t callback, void* callback_arg);
+
+/**
+ * @brief Register a handler for application/x-www-form-urlencoded requests
+ *
+ * Unlike http_register_handler, handlers registered using this function will
+ * not receive HTTP_HANDLE_DATA events. Instead, request body will be parsed
+ * into key-value pairs, which can be retrieved while handling
+ * HTTP_HANDLE_RESPONSE event using http_request_get_form_value.
+ *
+ * @param server  Server handle to register the handler for
+ * @param uri_pattern URI pattern to match
+ * @param method one of HTTP_GET, HTTP_POST, HTTP_PUT, etc
+ * @param events  a bit mask of HTTP_HANDLE_X events for which the handler
+ *                should be called. HTTP_HANDLE_DATA will not be passed to
+ *                the callback.
+ * @param callback function to call
+ * @param callback_arg application context to pass to the callback
+ * @return
+ *  - ESP_OK on success
+ *  - ESP_ERR_NO_MEM if out of memory
+ */
+esp_err_t http_register_form_handler(http_server_t server, const char* uri_pattern, int method,
+                                    int events, http_handler_fn_t callback, void* callback_arg);
+
+/**
+ * @brief Get value for given form item name
+ * @param http_ctx  context passed to the handler
+ * @param name  name of form item
+ * @return  pointer to the form item value, valid until the end of request
+ */
+const char* http_request_get_form_value(http_context_t http_ctx, const char* name);
+
+/**
+ * @brief Get request method
+ * @param http_ctx  context passed to the handler
+ * @return one of HTTP_GET, HTTP_POST, etc
+ */
+int http_request_get_method(http_context_t http_ctx);
+
+/**
+ * @brief Get URI present in the request
+ * @param http_ctx  context passed to the handler
+ * @return pointer to the URI, valid until the end of request
+ */
+const char* http_request_get_uri(http_context_t http_ctx);
+
+/**
+ * @brief Get request header
+ * @param http_ctx  context passed to the handler
+ * @param name header name
+ * @return
+ *  - If the header with given name is present in the request, returns
+ *    pointer to the value; valid until request callback returns.
+ *  - Otherwise, returns NULL
+ */
+const char* http_request_get_header(http_context_t ctx, const char* name);
+
+/**
+ * @brief Get the event which caused a call to the handler
+ * @param ctx  context passed to the handler
+ * @return  one of HTTP_HANDLE_X values
+ */
+int http_request_get_event(http_context_t ctx);
+
+/**
+ * @brief Get the request body fragment
+ * To be used when handling HTTP_HANDLE_DATA event.
+ *
+ * @param ctx  context passed to the handler
+ * @param[out] out_data_ptr  output, receives pointer to the body fragment
+ * @param[out] out_size  output, receives the size of the body fragment
+ * @return
+ *      - ESP_OK on success
+ *      - ESP_ERR_INVALID_STATE if called for events other than HTTP_HANDLE_DATA
+ */
+esp_err_t http_request_get_data(http_context_t ctx, const char** out_data_ptr, size_t* out_size);
+
 
 /**
  * @brief structure describing a part of the response to be sent

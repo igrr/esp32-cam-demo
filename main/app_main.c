@@ -123,22 +123,23 @@ void app_main()
     initialise_wifi();
 
     http_server_t server;
-    ESP_ERROR_CHECK( http_server_start(80, &server) );
+    http_server_options_t http_options = HTTP_SERVER_OPTIONS_DEFAULT();
+    ESP_ERROR_CHECK( http_server_start(&http_options, &server) );
 
     if (s_pixel_format == CAMERA_PF_GRAYSCALE) {
-        ESP_ERROR_CHECK( http_register_handler(server, "/pgm", HTTP_GET, &handle_grayscale_pgm, NULL) );
+        ESP_ERROR_CHECK( http_register_handler(server, "/pgm", HTTP_GET, HTTP_HANDLE_RESPONSE, &handle_grayscale_pgm, NULL) );
         ESP_LOGI(TAG, "Open http://" IPSTR "/pgm for a single image/x-portable-graymap image", IP2STR(&s_ip_addr));
     }
     if (s_pixel_format == CAMERA_PF_RGB565) {
-        ESP_ERROR_CHECK( http_register_handler(server, "/bmp", HTTP_GET, &handle_rgb_bmp, NULL) );
+        ESP_ERROR_CHECK( http_register_handler(server, "/bmp", HTTP_GET, HTTP_HANDLE_RESPONSE, &handle_rgb_bmp, NULL) );
         ESP_LOGI(TAG, "Open http://" IPSTR "/bmp for single image/bitmap image", IP2STR(&s_ip_addr));
-        ESP_ERROR_CHECK( http_register_handler(server, "/bmp_stream", HTTP_GET, &handle_rgb_bmp_stream, NULL) );
+        ESP_ERROR_CHECK( http_register_handler(server, "/bmp_stream", HTTP_GET, HTTP_HANDLE_RESPONSE, &handle_rgb_bmp_stream, NULL) );
         ESP_LOGI(TAG, "Open http://" IPSTR "/bmp_stream for multipart/x-mixed-replace stream of bitmaps", IP2STR(&s_ip_addr));
     }
     if (s_pixel_format == CAMERA_PF_JPEG) {
-        ESP_ERROR_CHECK( http_register_handler(server, "/jpg", HTTP_GET, &handle_jpg, NULL) );
+        ESP_ERROR_CHECK( http_register_handler(server, "/jpg", HTTP_GET, HTTP_HANDLE_RESPONSE, &handle_jpg, NULL) );
         ESP_LOGI(TAG, "Open http://" IPSTR "/jpg for single image/jpg image", IP2STR(&s_ip_addr));
-        ESP_ERROR_CHECK( http_register_handler(server, "/jpg_stream", HTTP_GET, &handle_jpg_stream, NULL) );
+        ESP_ERROR_CHECK( http_register_handler(server, "/jpg_stream", HTTP_GET, HTTP_HANDLE_RESPONSE, &handle_jpg_stream, NULL) );
         ESP_LOGI(TAG, "Open http://" IPSTR "/jpg_stream for multipart/x-mixed-replace stream of JPEGs", IP2STR(&s_ip_addr));
     }
     ESP_LOGI(TAG, "Free heap: %u", xPortGetFreeHeapSize());
