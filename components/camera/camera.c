@@ -1,14 +1,3 @@
-/*
- * Portions of this file come from OpenMV project (see sensor_* functions in the end of file)
- * Here is the copyright for these parts:
- * This file is part of the OpenMV project.
- * Copyright (c) 2013/2014 Ibrahim Abdelkader <i.abdalkader@gmail.com>
- * This work is licensed under the MIT license, see the file LICENSE for details.
- *
- *
- * Rest of the functions are licensed under Apache license as found below:
- */
-
 // Copyright 2015-2016 Espressif Systems (Shanghai) PTE LTD
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
