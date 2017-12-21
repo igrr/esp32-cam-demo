@@ -37,6 +37,7 @@
 #include "soc/i2s_struct.h"
 #include "soc/io_mux_reg.h"
 #include "driver/gpio.h"
+#include "driver/rtc_io.h"
 #include "driver/periph_ctrl.h"
 #include "esp_intr_alloc.h"
 #include "esp_log.h"
@@ -543,6 +544,9 @@ static void i2s_init()
             .intr_type = GPIO_INTR_DISABLE
     };
     for (int i = 0; i < sizeof(pins) / sizeof(gpio_num_t); ++i) {
+        if (rtc_gpio_is_valid_gpio(pins[i])) {
+            rtc_gpio_deinit(pins[i]);
+        }
         conf.pin_bit_mask = 1LL << pins[i];
         gpio_config(&conf);
     }
