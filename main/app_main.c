@@ -69,6 +69,8 @@ void app_main()
         ESP_ERROR_CHECK( nvs_flash_init() );
     }
 
+    ESP_ERROR_CHECK(gpio_install_isr_service(0));
+
     camera_config_t camera_config = {
         .ledc_channel = LEDC_CHANNEL_0,
         .ledc_timer = LEDC_TIMER_0,

@@ -65,7 +65,6 @@ typedef struct {
     i2s_sampling_mode_t sampling_mode;
     dma_filter_t dma_filter;
     intr_handle_t i2s_intr_handle;
-    intr_handle_t vsync_intr_handle;
     QueueHandle_t data_ready;
     SemaphoreHandle_t frame_ready;
     TaskHandle_t dma_filter_task;

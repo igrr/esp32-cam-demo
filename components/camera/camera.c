@@ -115,6 +115,17 @@ static size_t i2s_bytes_per_sample(i2s_sampling_mode_t mode)
     }
 }
 
+static void vsync_intr_disable()
+{
+    gpio_set_intr_type(s_state->config.pin_vsync, GPIO_INTR_DISABLE);
+}
+
+static void vsync_intr_enable()
+{
+    gpio_set_intr_type(s_state->config.pin_vsync, GPIO_INTR_NEGEDGE);
+}
+
+
 esp_err_t camera_probe(const camera_config_t* config, camera_model_t* out_camera_model)
 {
     if (s_state != NULL) {
@@ -321,13 +332,10 @@ esp_err_t camera_init(const camera_config_t* config)
     }
 
     ESP_LOGD(TAG, "Initializing GPIO interrupts");
-    gpio_set_intr_type(s_state->config.pin_vsync, GPIO_INTR_NEGEDGE);
-    gpio_intr_enable(s_state->config.pin_vsync);
-    err = gpio_isr_register(&gpio_isr, (void*) TAG,
-            ESP_INTR_FLAG_INTRDISABLED | ESP_INTR_FLAG_IRAM,
-            &s_state->vsync_intr_handle);
+    vsync_intr_disable();
+    err = gpio_isr_handler_add(s_state->config.pin_vsync, &gpio_isr, NULL);
     if (err != ESP_OK) {
-        ESP_LOGE(TAG, "gpio_isr_register failed (%x)", err);
+        ESP_LOGE(TAG, "gpio_isr_handler_add failed (%x)", err);
         goto fail;
     }
 
@@ -364,10 +372,7 @@ esp_err_t camera_deinit()
     if (s_state->frame_ready) {
         vSemaphoreDelete(s_state->frame_ready);
     }
-    if (s_state->vsync_intr_handle) {
-        esp_intr_disable(s_state->vsync_intr_handle);
-        esp_intr_free(s_state->vsync_intr_handle);
-    }
+    gpio_isr_handler_remove(s_state->config.pin_vsync);
     if (s_state->i2s_intr_handle) {
         esp_intr_disable(s_state->i2s_intr_handle);
         esp_intr_free(s_state->i2s_intr_handle);
@@ -605,7 +610,7 @@ static void i2s_init()
 static void i2s_stop()
 {
     esp_intr_disable(s_state->i2s_intr_handle);
-    esp_intr_disable(s_state->vsync_intr_handle);
+    vsync_intr_disable();
     i2s_conf_reset();
     I2S0.conf.rx_start = 0;
     size_t val = SIZE_MAX;
@@ -649,7 +654,7 @@ static void i2s_run()
     I2S0.int_ena.in_done = 1;
     esp_intr_enable(s_state->i2s_intr_handle);
     if (s_state->config.pixel_format == CAMERA_PF_JPEG) {
-        esp_intr_enable(s_state->vsync_intr_handle);
+        vsync_intr_enable();
     }
     I2S0.conf.rx_start = 1;
 
@@ -684,8 +689,6 @@ static void IRAM_ATTR i2s_isr(void* arg)
 
 static void IRAM_ATTR gpio_isr(void* arg)
 {
-    GPIO.status1_w1tc.val = GPIO.status1.val;
-    GPIO.status_w1tc = GPIO.status;
     bool need_yield = false;
     ESP_EARLY_LOGV(TAG, "gpio isr, cnt=%d", s_state->dma_received_count);
     if (gpio_get_level(s_state->config.pin_vsync) == 0 &&
