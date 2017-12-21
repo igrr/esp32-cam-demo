@@ -31,8 +31,8 @@
 #include "esp_intr_alloc.h"
 #include "esp_log.h"
 #include "sensor.h"
+#include "systick.h"
 #include "sccb.h"
-#include "wiring.h"
 #include "camera.h"
 #include "camera_common.h"
 #include "xclk.h"
@@ -139,13 +139,13 @@ esp_err_t camera_probe(const camera_config_t* config, camera_model_t* out_camera
     gpio_config(&conf);
 
     gpio_set_level(config->pin_reset, 0);
-    delay(10);
+    systick_sleep(10);
     gpio_set_level(config->pin_reset, 1);
-    delay(10);
+    systick_sleep(10);
 
     ESP_LOGD(TAG, "Searching for camera address");
     /* Probe the sensor */
-    delay(10);
+    systick_sleep(10);
     uint8_t slv_addr = SCCB_Probe();
     if (slv_addr == 0) {
         *out_camera_model = CAMERA_NONE;
@@ -158,7 +158,7 @@ esp_err_t camera_probe(const camera_config_t* config, camera_model_t* out_camera
     id->VER = SCCB_Read(slv_addr, REG_VER);
     id->MIDL = SCCB_Read(slv_addr, REG_MIDL);
     id->MIDH = SCCB_Read(slv_addr, REG_MIDH);
-    delay(10);
+    systick_sleep(10);
     ESP_LOGD(TAG, "Camera PID=0x%02x VER=0x%02x MIDL=0x%02x MIDH=0x%02x",
             id->PID, id->VER, id->MIDH, id->MIDL);
 

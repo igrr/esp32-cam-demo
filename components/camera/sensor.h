@@ -9,7 +9,6 @@
 #ifndef __SENSOR_H__
 #define __SENSOR_H__
 #include <stdint.h>
-#include "wiring.h"
 
 #define OV9650_PID     (0x96)
 #define OV2640_PID     (0x26)
