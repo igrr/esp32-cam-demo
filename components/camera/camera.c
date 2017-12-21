@@ -719,10 +719,13 @@ static void IRAM_ATTR dma_filter_task(void *pvParameters)
             continue;
         }
 
-        uint8_t* pfb = s_state->fb + get_fb_pos();
+        size_t fb_pos = get_fb_pos();
+        assert(fb_pos <= s_state->fb_size + s_state->width *
+                s_state->fb_bytes_per_pixel / s_state->dma_per_line);
+
+        uint8_t* pfb = s_state->fb + fb_pos;
         const dma_elem_t* buf = s_state->dma_buf[buf_idx];
         lldesc_t* desc = &s_state->dma_desc[buf_idx];
-        ESP_LOGV(TAG, "dma_flt: pos=%d ", get_fb_pos());
         (*s_state->dma_filter)(buf, desc, pfb);
         s_state->dma_filtered_count++;
         ESP_LOGV(TAG, "dma_flt: flt_count=%d ", s_state->dma_filtered_count);
