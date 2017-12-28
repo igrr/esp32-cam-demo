@@ -76,7 +76,7 @@ Specific pins used in this example to connect ESP32 and camera are shown in tabl
 | Pixel Data Bit 6 | D8 | IO34 | IO36 |
 | Pixel Data Bit 7 | D9 | IO35 | IO19 |
 | Camera Reset | RESET | IO2 | IO15 |
-| Camera Power Down | PWDN | *see Note 2* | *see Note 2* |
+| Camera Power Down | PWDN | *see Note 3* | *see Note 3* |
 | Power Supply 3.3V | 3V3 | 3V3 | 3V3 |
 | Ground | GND | GND | GND |
 
