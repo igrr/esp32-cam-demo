@@ -76,6 +76,20 @@ typedef struct {
 #define ESP_ERR_CAMERA_NOT_SUPPORTED            (ESP_ERR_CAMERA_BASE + 3)
 
 /**
+ * Return human-readable representation of pixel format
+ * @param pf pixel format value
+ * @return human readable name, e.g. "RGB565"
+ */
+const char* camera_pixelformat_str(camera_pixelformat_t pf);
+
+/**
+ * Return human-readable representation for frame size
+ * @param fs frame size value
+ * @return human readable name, e.g. "qvga"
+ */
+const char* camera_framesize_str(camera_framesize_t fs);
+
+/**
  * @brief Probe the camera
  * This function enables LEDC peripheral to generate XCLK signal,
  * detects the camera I2C address and detects camera model.
