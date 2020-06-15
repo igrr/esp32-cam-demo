@@ -1,3 +1,10 @@
+# NOTICE
+
+**This repository is archived, and no longer maintained. Please check https://github.com/espressif/esp32-camera for the ESP32 camera driver officially supported by Espressif.**
+
+Thanks to everyone who had contributed to this repository in the past.
+
+---
 # ESP32 Camera Demo
 
 Code provided in this repository gets the image from camera and prints it out as ASCII art to the serial port.
